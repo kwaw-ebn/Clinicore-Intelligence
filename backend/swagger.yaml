@@ -1,0 +1,80 @@
+openapi: "3.0.0"
+info:
+  title: Clinic Assist API
+  version: "1.0.0"
+servers:
+  - url: /
+paths:
+  /predict-disease:
+    post:
+      summary: Predict disease top-3
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: top3 predictions
+  /predict-outcome:
+    post:
+      summary: Predict outcome risk
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: risk probability
+  /feature-importance:
+    get:
+      summary: Feature importance for disease model
+      responses:
+        '200':
+          description: array of feature importances
+  /roc-data:
+    post:
+      summary: Compute ROC curve
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                y_true:
+                  type: array
+                  items: {type: integer}
+                y_prob:
+                  type: array
+                  items: {type: number}
+      responses:
+        '200':
+          description: ROC data
+  /confusion-matrix:
+    post:
+      summary: Compute confusion matrix
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                y_true: {type: array, items: {type: integer}}
+                y_pred: {type: array, items: {type: integer}}
+      responses:
+        '200':
+          description: Confusion matrix
+  /log-metrics:
+    post:
+      summary: Log metrics to Firestore (admin)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: ok

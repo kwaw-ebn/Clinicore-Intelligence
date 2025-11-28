@@ -1,0 +1,25 @@
+name: CI
+
+on: [push, pull_request]
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      - name: Install backend deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+      - name: Run train script (smoke)
+        run: |
+          # This runs but expects dataset to be present in repo; skip if not.
+          if [ -f "Disease_symptom_and_patient_profile_dataset.csv" ]; then
+            python backend/train_model.py
+          else
+            echo "Dataset missing - skipping model train"
+          fi

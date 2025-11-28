@@ -1,0 +1,16 @@
+# Python/venv
+venv/
+env/
+__pycache__/
+*.pyc
+
+# Models and service accounts
+/backend/*.joblib
+/backend/serviceAccountKey.json
+/serviceAccountKey.json
+*.pem
+.env
+
+# System/IDE
+.DS_Store
+.vscode/

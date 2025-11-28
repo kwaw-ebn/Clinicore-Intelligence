@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Clinic Assist — Dashboard</title>
+
+  <!-- Styles -->
+  <link rel="stylesheet" href="dashboard.css" />
+
+  <!-- Firebase SDK -->
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-auth.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
+
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+
+<!-- ========================= -->
+<!-- AI CHATBOT WIDGET         -->
+<!-- ========================= -->
+<div class="chat-widget">
+    <h3>Doctor AI Assistant</h3>
+
+    <div id="chat-box" class="chat-box"></div>
+
+    <div class="chat-input-area">
+        <input type="text" id="chatInput" placeholder="Ask something...">
+        <button onclick="sendMessage()">Send</button>
+        <button onclick="startVoice()">🎤</button>
+    </div>
+
+    <button onclick="generateNote()" class="note-btn">Generate Doctor Note</button>
+</div>
+
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <img src="logo.png" class="logo" alt="logo"/>
+      <div>
+        <h1>Clinic Assist</h1>
+        <p class="muted">Vitals, predictive diagnosis & AI assistant</p>
+      </div>
+    </div>
+
+    <div class="user-actions">
+      <span id="userName" class="muted"></span>
+      <button id="logoutBtn" class="danger">Logout</button>
+    </div>
+  </header>
+
+  <main class="dashboard-layout">
+    <aside class="sidebar">
+      <div class="card small">
+        <h3>Quick Actions</h3>
+        <button id="newRecordBtn" class="primary">New Vitals</button>
+      </div>
+      <!-- ========================= -->
+<!-- PATIENT PROFILE (SIDEBAR) -->
+<!-- ========================= -->
+<div class="card small" id="patientProfileCard">
+  <h4>Patient Profile</h4>
+  <input id="pf_name" placeholder="Full name" />
+  <input id="pf_age" type="number" placeholder="Age" />
+  <select id="pf_gender"><option>Male</option><option>Female</option></select>
+  <input id="pf_phone" placeholder="Phone (optional)" />
+  <select id="pf_bp" ><option>Normal</option><option>Low</option><option>High</option></select>
+  <button id="savePatientBtn" class="primary" style="margin-top:8px">Save Profile</button>
+</div>
+
+
+      <div class="card small">
+        <h4>Totals</h4>
+        <p>Records: <span id="totalRecords">0</span></p>
+        <p>Unique Diagnoses: <span id="uniqueDx">0</span></p>
+      </div>
+
+      <div class="card small">
+        <h4>AI Assistant</h4>
+        <button id="openChat" class="primary">Open Chat</button>
+      </div>
+    </aside>
+
+    <section class="main-panel">
+      <div class="card">
+        <h2>Enter patient vitals</h2>
+        <form id="predictForm" class="form-grid">
+
+          <!-- ========================= -->
+<!-- DOCTOR ANALYTICS (ADMIN) -->
+<!-- ========================= -->
+<div class="card" id="analyticsCard" style="display:none;">
+  <h3>Doctor Analytics (Admin)</h3>
+
+  <div class="grid-2">
+    <div>
+      <h4>Records Over Time</h4>
+      <canvas id="recordsTimeChart" height="140"></canvas>
+    </div>
+
+    <div>
+      <h4>Top Diagnoses</h4>
+      <canvas id="topDxChart" height="140"></canvas>
+    </div>
+  </div>
+
+  <div style="margin-top:12px">
+    <h4>Average Risk</h4>
+    <div id="avgRisk">N/A</div>
+  </div>
+</div>
+
+          <!-- ========================= -->
+<!-- SYMPTOM CHECKER -->
+<!-- ========================= -->
+<div class="card" id="symptomCheckerCard">
+  <h3>Symptom Checker</h3>
+
+  <div class="symptom-grid">
+    <label><input type="checkbox" class="symptom" value="Fever"> Fever</label>
+    <label><input type="checkbox" class="symptom" value="Cough"> Cough</label>
+    <label><input type="checkbox" class="symptom" value="Fatigue"> Fatigue</label>
+    <label><input type="checkbox" class="symptom" value="Difficulty Breathing"> Difficulty Breathing</label>
+    <label><input type="checkbox" class="symptom" value="Headache"> Headache</label>
+    <label><input type="checkbox" class="symptom" value="Sore Throat"> Sore Throat</label>
+    <label><input type="checkbox" class="symptom" value="Nausea"> Nausea</label>
+    <label><input type="checkbox" class="symptom" value="Diarrhea"> Diarrhea</label>
+  </div>
+
+  <div style="margin-top:10px">
+    <button id="runSymptomCheck" class="primary">Run Symptom Check</button>
+  </div>
+
+  <div id="symptomResult" class="result-box" style="margin-top:12px;display:none;"></div>
+</div>
+
+          <input id="pname" placeholder="Patient name" />
+          <input id="age" placeholder="Age" type="number" />
+          <select id="gender"><option>Male</option><option>Female</option></select>
+
+          <input id="temp" placeholder="Temp (°C)" step="0.1" type="number" />
+          <input id="hr" placeholder="HR (bpm)" type="number" />
+          <input id="rr" placeholder="RR (breaths/min)" type="number" />
+          <input id="spo2" placeholder="SpO2 (%)" type="number" />
+
+          <select id="bp_cat"><option>Normal</option><option>Low</option><option>High</option></select>
+          <select id="chol"><option>Normal</option><option>Low</option><option>High</option></select>
+
+          <label><input type="checkbox" id="fever"/> Fever</label>
+          <label><input type="checkbox" id="cough"/> Cough</label>
+          <label><input type="checkbox" id="fatigue"/> Fatigue</label>
+          <label><input type="checkbox" id="dbreath"/> Difficulty Breathing</label>
+
+          <div class="actions">
+            <button type="submit" class="primary">Predict & Save</button>
+          </div>
+        </form>
+      </div>
+
+      <div class="card grid-2">
+        <div>
+          <h3>Diagnosis distribution</h3>
+          <canvas id="diagChart" height="140"></canvas>
+        </div>
+        <div>
+          <h3>Feature importance (XGBoost)</h3>
+          <canvas id="featureImportanceChart" height="140"></canvas>
+        </div>
+      </div>
+
+      <div class="card grid-2">
+        <div>
+          <h3>ROC Curve</h3>
+          <canvas id="rocCurve" height="160"></canvas>
+        </div>
+        <div>
+          <h3>Confusion Matrix</h3>
+          <div id="confMatrixTable" class="conf-matrix"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Recent records</h3>
+        <div id="recordsList"></div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">Created by <strong>Ebenezer Kwaw</strong></footer>
+
+  <!-- App scripts -->
+  <script type="module" src="firebase-config.js"></script>
+  <script type="module" src="auth.js"></script>
+  <script type="module" src="dashboard.js"></script>
+</body>
+</html>
