@@ -1,0 +1,14 @@
+Flask==2.3.2
+firebase-admin==6.0.1
+gunicorn==20.1.0
+numpy==1.26.0
+scikit-learn==1.3.2
+joblib
+matplotlib
+pandas
+scikit-learn
+xgboost      # optional; only if you want to use XGBoost
+lightgbm     # optional; only if you want to use LightGBM
+flask
+flask-cors
+openai
