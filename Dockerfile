@@ -1,17 +1,20 @@
-# Root-level Dockerfile to build the full app (frontend served by Flask static)
-FROM python:3.11-slim
+# Use slim Python image to save memory
+FROM python:3.10-slim
 
+# Set working directory
 WORKDIR /app
 
-# system deps for xgboost sometimes need build tools - keep minimal
-RUN apt-get update && apt-get install -y build-essential libgomp1 && rm -rf /var/lib/apt/lists/*
+# Copy only requirements first (leverages Docker cache)
+COPY requirements.txt .
 
-COPY . /app
+# Install dependencies (no cache to save space)
+RUN pip install --no-cache-dir -r requirements.txt
 
-RUN python -m pip install --upgrade pip
-RUN pip install -r backend/requirements.txt
+# Copy the rest of the app
+COPY . .
 
-ENV PYTHONUNBUFFERED=1
-EXPOSE 5000
+# Expose port for Render
+EXPOSE 8000
 
-CMD ["gunicorn", "backend.server:app", "--bind", "0.0.0.0:5000", "--workers=2"]
+# Start FastAPI app
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
