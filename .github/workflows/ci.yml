@@ -26,6 +26,8 @@ jobs:
       - name: Check Python syntax
         run: python -m compileall -q backend
       - name: Run API contract tests
-        run: pytest -q
+        env:
+          PYTHONPATH: .
+        run: python -m pytest -q
       - name: Verify model files exist
         run: test -s backend/disease_model.joblib && test -s backend/outcome_model.joblib
