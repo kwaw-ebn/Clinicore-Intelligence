@@ -1,32 +1,23 @@
 import FIREBASE_CONFIG from './firebase-config.js';
 
-if (!window.firebase) throw new Error('Firebase SDK missing - load firebase-app and firebase-auth scripts');
-firebase.initializeApp(FIREBASE_CONFIG);
-const auth = firebase.auth();
-const db = firebase.firestore();
+if (!window.firebase) throw new Error('Firebase SDK missing');
+const app = firebase.apps.length ? firebase.app() : firebase.initializeApp(FIREBASE_CONFIG);
+const auth = app.auth();
+const db = app.firestore();
 
-/**
- * register(email, password, displayName, role)
- * - creates the user and writes a users/{uid} doc with role
- */
-async function register(email, password, displayName, role='doctor'){
+async function register(email, password, displayName) {
   const cred = await auth.createUserWithEmailAndPassword(email, password);
-  await cred.user.updateProfile({ displayName });
+  await cred.user.updateProfile({displayName});
   await db.collection('users').doc(cred.user.uid).set({
-    email, displayName, role, createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    email, displayName, role: 'doctor',
+    createdAt: firebase.firestore.FieldValue.serverTimestamp()
   });
   return cred.user;
 }
-
-function login(email,password){
-  return auth.signInWithEmailAndPassword(email,password);
+const login = (email, password) => auth.signInWithEmailAndPassword(email, password);
+async function getUserRole(uid) {
+  const snapshot = await db.collection('users').doc(uid).get();
+  return snapshot.exists ? snapshot.data().role : null;
 }
-
-async function getUserRole(uid){
-  const doc = await db.collection('users').doc(uid).get();
-  if (!doc.exists) return null;
-  return doc.data().role;
-}
-
-window.AppAuth = { register, login, getUserRole, auth, db };
+window.AppAuth = {register, login, getUserRole, auth, db};
 export default window.AppAuth;

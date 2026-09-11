@@ -1,320 +1,209 @@
+"""CliniCore Intelligence MVP API.
+
+Research prototype only. Predictions are decision-support signals and must not be
+used as a diagnosis or as the sole basis for treatment.
 """
-backend/server.py
-- Loads XGBoost models saved as joblib bundles:
-  {'model': model, 'labels': [...], 'features': [...]}
-- Endpoints:
-  POST /predict-disease   -> returns top3 disease candidates
-  POST /predict-outcome   -> returns risk probability
-  GET  /feature-importance-> returns list of feature importance
-  POST /roc-data          -> computes ROC from provided arrays (y_true,y_prob)
-  POST /confusion-matrix  -> computes confusion matrix from provided arrays
-  POST /log-metrics       -> stores metrics in Firestore (if service account configured)
-  POST /api/chat          -> proxies to OpenAI (if OPENAI_API_KEY set)
-  GET  /swagger.yaml      -> serves swagger docs (simple)
-"""
-import os, traceback, json
-from flask import Flask, request, jsonify, send_from_directory, Response
-from flask_cors import CORS
+import os
+import traceback
+from pathlib import Path
+
 import joblib
 import numpy as np
-from sklearn.metrics import roc_curve, auc, confusion_matrix
+from flask import Flask, Response, jsonify, request, send_from_directory
+from flask_cors import CORS
+from sklearn.metrics import auc, confusion_matrix, roc_curve
 
-# Optional OpenAI
-OPENAI_KEY = os.getenv("OPENAI_API_KEY")
-if OPENAI_KEY:
-    import openai
-    openai.api_key = OPENAI_KEY
+BASE_DIR = Path(__file__).resolve().parent
+FRONTEND_DIR = BASE_DIR.parent / "Frontend"
 
-# Optional Firebase Admin
-FIREBASE_ENABLED = False
-db = None
-try:
-    svc = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
-    if svc and os.path.exists(svc):
-        import firebase_admin
-        from firebase_admin import credentials, firestore
-        cred = credentials.Certificate(svc)
-        firebase_admin.initialize_app(cred)
-        db = firestore.client()
-        FIREBASE_ENABLED = True
-        print("Firebase Admin initialized for server metrics logging.")
-except Exception as e:
-    print("Firebase admin not enabled:", e)
+app = Flask(__name__, static_folder=str(FRONTEND_DIR), static_url_path="")
+allowed_origins = [value.strip() for value in os.getenv("ALLOWED_ORIGINS", "").split(",") if value.strip()]
+CORS(app, resources={r"/*": {"origins": allowed_origins or "*"}})
+app.config["MAX_CONTENT_LENGTH"] = 64 * 1024
 
-app = Flask(__name__, static_folder="../frontend", static_url_path="/")
-CORS(app)
 
-# MODEL LOAD
-DISEASE_MODEL_PATH = os.path.join(os.path.dirname(__file__), "disease_model.joblib")
-OUTCOME_MODEL_PATH = os.path.join(os.path.dirname(__file__), "outcome_model.joblib")
-
-disease_bundle = None
-outcome_bundle = None
-
-def safe_load(path):
+def load_bundle(filename):
+    path = BASE_DIR / filename
     try:
-        if os.path.exists(path):
-            return joblib.load(path)
-    except Exception as e:
-        print("Failed loading model", path, e)
-    return None
+        return joblib.load(path) if path.exists() else None
+    except Exception as exc:
+        app.logger.error("Could not load %s: %s", filename, exc)
+        return None
 
-disease_bundle = safe_load(DISEASE_MODEL_PATH)
-outcome_bundle = safe_load(OUTCOME_MODEL_PATH)
 
-if disease_bundle:
-    disease_model = disease_bundle.get("model")
-    disease_labels = disease_bundle.get("labels")
-    disease_features = disease_bundle.get("features")
-else:
-    disease_model = None
-    disease_labels = []
-    disease_features = []
+disease_bundle = load_bundle("disease_model.joblib")
+outcome_bundle = load_bundle("outcome_model.joblib")
+disease_model = disease_bundle.get("model") if disease_bundle else None
+disease_labels = disease_bundle.get("labels", []) if disease_bundle else []
+disease_features = disease_bundle.get("features", []) if disease_bundle else []
+outcome_model = outcome_bundle.get("model") if outcome_bundle else None
 
-if outcome_bundle:
-    outcome_model = outcome_bundle.get("model")
-    outcome_labels = outcome_bundle.get("labels")
-    outcome_features = outcome_bundle.get("features")
-else:
-    outcome_model = None
-    outcome_labels = []
-    outcome_features = []
 
-# PREPROCESS helpers (accepts keys used in frontend)
+def json_body():
+    if not request.is_json:
+        raise ValueError("Content-Type must be application/json")
+    return request.get_json(silent=True) or {}
+
+
+def yes(value):
+    return str(value).strip().lower() in {"yes", "y", "true", "1"}
+
+
 def preprocess_input(payload):
-    bp_map = {"Low": 0, "Normal": 1, "High": 2}
-    chol_map = {"Low": 0, "Normal": 1, "High": 2}
+    try:
+        age = float(payload.get("Age", payload.get("age")))
+    except (TypeError, ValueError):
+        raise ValueError("Age must be a number between 0 and 120")
+    if not 0 <= age <= 120:
+        raise ValueError("Age must be between 0 and 120")
 
-    # tolerate slightly different keys
-    fever = payload.get("Fever") or payload.get("fever") or "No"
-    cough = payload.get("Cough") or payload.get("cough") or "No"
-    fatigue = payload.get("Fatigue") or payload.get("fatigue") or "No"
-    dbreath = payload.get("DifficultyBreathing") or payload.get("Difficulty Breathing") or payload.get("dbreath") or "No"
-    age = float(payload.get("Age") or payload.get("age") or 0)
-    gender = payload.get("Gender") or payload.get("gender") or "Female"
-    bp = payload.get("BloodPressure") or payload.get("Blood Pressure") or payload.get("bp_cat") or "Normal"
-    chol = payload.get("Cholesterol") or payload.get("Cholesterol Level") or payload.get("chol") or "Normal"
+    bp = str(payload.get("BloodPressure", payload.get("Blood Pressure", "Normal"))).title()
+    chol = str(payload.get("Cholesterol", payload.get("Cholesterol Level", "Normal"))).title()
+    if bp not in {"Low", "Normal", "High"} or chol not in {"Low", "Normal", "High"}:
+        raise ValueError("Blood pressure and cholesterol must be Low, Normal, or High")
 
-    arr = [
-        1 if str(fever).strip().lower() in ("yes","y","true","1") else 0,
-        1 if str(cough).strip().lower() in ("yes","y","true","1") else 0,
-        1 if str(fatigue).strip().lower() in ("yes","y","true","1") else 0,
-        1 if str(dbreath).strip().lower() in ("yes","y","true","1") else 0,
-        age,
-        1 if str(gender).strip().lower() in ("male","m","1") else 0,
-        bp_map.get(str(bp).strip(), 1),
-        chol_map.get(str(chol).strip(), 1)
+    values = [
+        yes(payload.get("Fever", "No")), yes(payload.get("Cough", "No")),
+        yes(payload.get("Fatigue", "No")),
+        yes(payload.get("DifficultyBreathing", payload.get("Difficulty Breathing", "No"))),
+        age, str(payload.get("Gender", "Female")).lower() in {"male", "m", "1"},
+        {"Low": 0, "Normal": 1, "High": 2}[bp],
+        {"Low": 0, "Normal": 1, "High": 2}[chol],
     ]
-    return np.array(arr).reshape(1, -1)
+    return np.asarray(values, dtype=float).reshape(1, -1)
 
-# ENDPOINTS
-@app.route("/predict-disease", methods=["POST"])
+
+def prototype_meta():
+    return {"prototype": True, "clinical_use": False,
+            "disclaimer": "For supervised MVP testing only. Not a diagnosis or treatment recommendation."}
+
+
+@app.get("/health")
+def health():
+    ready = disease_model is not None and outcome_model is not None
+    return jsonify({"status": "ok" if ready else "degraded", "models_loaded": ready, **prototype_meta()}), 200 if ready else 503
+
+
+@app.post("/predict-disease")
 def predict_disease():
-    payload = request.get_json() or {}
     try:
-        X = preprocess_input(payload)
         if disease_model is None:
-            return jsonify({"error":"Disease model not loaded"}), 500
-        probs = disease_model.predict_proba(X)[0]
-        ranked = sorted(zip(disease_labels, probs), key=lambda x: x[1], reverse=True)
-        top3 = [{"disease": name, "confidence": float(round(score,4))} for name,score in ranked[:3]]
-        return jsonify({"top3": top3})
-    except Exception as e:
-        traceback.print_exc()
-        return jsonify({"error": str(e)}), 500
+            return jsonify(error="Disease model is unavailable", **prototype_meta()), 503
+        probabilities = disease_model.predict_proba(preprocess_input(json_body()))[0]
+        ranked = sorted(zip(disease_labels, probabilities), key=lambda item: item[1], reverse=True)[:3]
+        return jsonify(top3=[{"condition": str(name), "confidence": round(float(score), 4)} for name, score in ranked], **prototype_meta())
+    except ValueError as exc:
+        return jsonify(error=str(exc), **prototype_meta()), 400
+    except Exception:
+        app.logger.exception("Disease prediction failed")
+        return jsonify(error="Prediction could not be completed", **prototype_meta()), 500
 
-@app.route("/predict-outcome", methods=["POST"])
+
+@app.post("/predict-outcome")
 def predict_outcome():
-    payload = request.get_json() or {}
     try:
-        X = preprocess_input(payload)
         if outcome_model is None:
-            return jsonify({"error":"Outcome model not loaded"}), 500
-        prob = float(outcome_model.predict_proba(X)[0][1])
-        label = "High Risk" if prob >= 0.5 else "Low Risk"
-        return jsonify({"risk": label, "probability": round(prob,4)})
-    except Exception as e:
-        traceback.print_exc()
-        return jsonify({"error": str(e)}), 500
+            return jsonify(error="Outcome model is unavailable", **prototype_meta()), 503
+        probability = float(outcome_model.predict_proba(preprocess_input(json_body()))[0][1])
+        return jsonify(risk="Higher model-estimated risk" if probability >= 0.5 else "Lower model-estimated risk",
+                       probability=round(probability, 4), **prototype_meta())
+    except ValueError as exc:
+        return jsonify(error=str(exc), **prototype_meta()), 400
+    except Exception:
+        app.logger.exception("Outcome prediction failed")
+        return jsonify(error="Risk estimate could not be completed", **prototype_meta()), 500
 
-@app.route("/feature-importance", methods=["GET"])
+
+@app.get("/feature-importance")
 def feature_importance():
-    try:
-        if disease_model is None:
-            return jsonify([])
-        importance = getattr(disease_model, "feature_importances_", None)
-        if importance is None:
-            # XGBoost may have get_booster().get_score()
-            try:
-                booster = disease_model.get_booster()
-                scores = booster.get_score(importance_type='weight')
-                # map to features list order
-                importance = [scores.get(f, 0.0) for f in disease_features]
-            except Exception:
-                importance = [0.0]*len(disease_features)
-        result = [{"feature": f, "importance": float(round(float(v),4))} for f,v in zip(disease_features, importance)]
-        return jsonify(result)
-    except Exception as e:
-        traceback.print_exc()
-        return jsonify([])
+    values = getattr(disease_model, "feature_importances_", []) if disease_model else []
+    return jsonify([{"feature": str(f), "importance": round(float(v), 4)} for f, v in zip(disease_features, values)])
 
-@app.route("/roc-data", methods=["POST"])
+
+@app.post("/roc-data")
 def roc_data():
     try:
-        body = request.get_json() or {}
-        y_true = list(body.get("y_true", []))
-        y_prob = list(body.get("y_prob", []))
-        if len(y_true) < 2:
-            return jsonify({"error":"Not enough samples"}), 400
+        body = json_body(); y_true = body.get("y_true", []); y_prob = body.get("y_prob", [])
+        if len(y_true) != len(y_prob) or len(set(y_true)) < 2:
+            raise ValueError("Equal-length arrays containing both outcome classes are required")
         fpr, tpr, _ = roc_curve(y_true, y_prob)
-        auc_val = auc(fpr, tpr)
-        return jsonify({"fpr": fpr.tolist(), "tpr": tpr.tolist(), "auc": float(round(auc_val,4))})
-    except Exception as e:
-        traceback.print_exc()
-        return jsonify({"error": str(e)}), 500
+        return jsonify(fpr=fpr.tolist(), tpr=tpr.tolist(), auc=round(float(auc(fpr, tpr)), 4))
+    except ValueError as exc:
+        return jsonify(error=str(exc)), 400
 
-@app.route("/confusion-matrix", methods=["POST"])
-def conf_matrix():
+
+@app.post("/confusion-matrix")
+def matrix():
     try:
-        body = request.get_json() or {}
-        y_true = list(body.get("y_true", []))
-        y_pred = list(body.get("y_pred", []))
-        if len(y_true) == 0:
-            return jsonify({"error":"y_true empty"}), 400
-        cm = confusion_matrix(y_true, y_pred).tolist()
-        return jsonify(cm)
-    except Exception as e:
-        traceback.print_exc()
-        return jsonify({"error": str(e)}), 500
+        body = json_body(); y_true = body.get("y_true", []); y_pred = body.get("y_pred", [])
+        if not y_true or len(y_true) != len(y_pred):
+            raise ValueError("Equal-length non-empty arrays are required")
+        return jsonify(confusion_matrix(y_true, y_pred, labels=[0, 1]).tolist())
+    except ValueError as exc:
+        return jsonify(error=str(exc)), 400
 
-@app.route("/log-metrics", methods=["POST"])
-def log_metrics():
-    """
-    Stores prediction / model metrics to Firestore collection "model_metrics"
-    Expected JSON fields: model (str), payload (dict), prediction (dict), user (optional)
-    """
-    body = request.get_json() or {}
-    if not FIREBASE_ENABLED:
-        return jsonify({"ok": False, "message": "Firestore not enabled on this server"}), 500
-    try:
-        doc = {
-            "model": body.get("model"),
-            "payload": body.get("payload"),
-            "prediction": body.get("prediction"),
-            "user": body.get("user"),
-            "ts": firestore.SERVER_TIMESTAMP if 'firestore' in globals() else None
-        }
-        db.collection("model_metrics").add(doc)
-        return jsonify({"ok": True})
-    except Exception as e:
-        traceback.print_exc()
-        return jsonify({"ok": False, "error": str(e)}), 500
 
-@app.route("/api/chat", methods=["POST"])
-def api_chat():
-    if not OPENAI_KEY:
-        return jsonify({"reply":"OpenAI key not configured"}), 500
-    try:
-        body = request.get_json() or {}
-        msg = body.get("message","")
-        completion = openai.ChatCompletion.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role":"system","content":"You are a clinical assistant. Provide concise, evidence-aware guidance. Mention uncertainty and recommend clinician judgement."},
-                {"role":"user","content":msg}
-            ],
-            max_tokens=512,
-            temperature=0.2
-        )
-        reply = completion.choices[0].message.content.strip()
-        return jsonify({"reply": reply})
-    except Exception as e:
-        traceback.print_exc()
-        return jsonify({"reply": f"AI error: {str(e)}"}), 500
+def openai_client():
+    key = os.getenv("OPENAI_API_KEY")
+    if not key:
+        return None
+    from openai import OpenAI
+    return OpenAI(api_key=key)
 
-# Simple swagger serve (static YAML)
-@app.route("/swagger.yaml", methods=["GET"])
-def swagger_yaml():
-    swagger_path = os.path.join(os.path.dirname(__file__), "swagger.yaml")
-    if os.path.exists(swagger_path):
-        return send_from_directory(os.path.dirname(__file__), "swagger.yaml")
-    return Response("openapi: '3.0.0'\ninfo:\n  title: Clinic Assist API\n  version: '1.0'\n", mimetype="text/yaml")
 
-# Serve frontend
-@app.route("/")
-def index():
-    return send_from_directory(app.static_folder, "dashboard.html")
-
-# ==========================================
-# CHATBOT ENDPOINT + NOTE GENERATION
-# ==========================================
-from openai import OpenAI
-import os
-
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-
-@app.route("/chat", methods=["POST"])
+@app.post("/chat")
+@app.post("/api/chat")
 def chat():
-    data = request.json
-    message = data.get("message", "")
-
-    response = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[
-            {
-                "role": "system",
-                "content": (
-                    "You are a clinical assistant AI. Provide safe medical explanations. "
-                    "Do NOT diagnose. "
-                    "Always advise seeing a clinician. "
-                    "After answering, ask one relevant follow-up question."
-                )
-            },
-            {"role": "user", "content": message}
-        ],
-        max_tokens=200
-    )
-
-    reply = response.choices[0].message["content"]
-    return jsonify({"reply": reply})
+    try:
+        message = str(json_body().get("message", "")).strip()
+        if not message or len(message) > 4000:
+            raise ValueError("Message must contain 1 to 4,000 characters")
+        client = openai_client()
+        if client is None:
+            return jsonify(error="AI assistant is not configured"), 503
+        response = client.chat.completions.create(model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"), temperature=0.2, max_tokens=400,
+            messages=[{"role":"system","content":"You are a clinician-facing prototype assistant. Do not diagnose, prescribe, or invent facts. State uncertainty, recommend clinical verification, and direct urgent or emergency concerns to local emergency services."},{"role":"user","content":message}])
+        return jsonify(reply=response.choices[0].message.content.strip(), **prototype_meta())
+    except ValueError as exc:
+        return jsonify(error=str(exc)), 400
+    except Exception:
+        app.logger.exception("Chat request failed")
+        return jsonify(error="AI assistant request failed"), 502
 
 
-# ==========================================
-# STRUCTURED DOCTOR NOTE GENERATION
-# ==========================================
-@app.route("/generate-note", methods=["POST"])
+@app.post("/generate-note")
 def generate_note():
-    data = request.json
-    chat = data.get("chat", "")
+    try:
+        transcript = str(json_body().get("chat", "")).strip()
+        if not transcript or len(transcript) > 12000:
+            raise ValueError("Chat transcript must contain 1 to 12,000 characters")
+        client = openai_client()
+        if client is None:
+            return jsonify(error="AI note generator is not configured"), 503
+        response = client.chat.completions.create(model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"), temperature=0.1, max_tokens=600,
+            messages=[{"role":"system","content":"Convert the transcript into a draft note with: Reported symptoms, Relevant history, Objective information, Assessment considerations, and Follow-up. Never add missing facts. Mark unknown information as not provided. Add: Draft for clinician review; not part of the medical record until verified."},{"role":"user","content":transcript}])
+        return jsonify(note=response.choices[0].message.content.strip(), **prototype_meta())
+    except ValueError as exc:
+        return jsonify(error=str(exc)), 400
+    except Exception:
+        app.logger.exception("Note generation failed")
+        return jsonify(error="Note generation failed"), 502
 
-    response = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[
-            {
-                "role": "system",
-                "content": (
-                    "Turn the conversation into a structured medical note.\n"
-                    "Do NOT diagnose. Use the following format:\n\n"
-                    "Symptoms:\n"
-                    "- ...\n"
-                    "Relevant History:\n"
-                    "- ...\n"
-                    "AI Observations:\n"
-                    "- ...\n"
-                    "Recommendations (safe):\n"
-                    "- ...\n"
-                    "Follow-up advice: Seek clinician confirmation.\n"
-                )
-            },
-            {"role": "user", "content": chat}
-        ],
-        max_tokens=250
-    )
 
-    note = response.choices[0].message["content"]
-    return jsonify({"note": note})
+@app.get("/swagger.yaml")
+def swagger_yaml():
+    return send_from_directory(BASE_DIR, "swagger.yaml")
+
+
+@app.get("/")
+def index():
+    return send_from_directory(FRONTEND_DIR, "index.html")
+
+
+@app.get("/<path:path>")
+def frontend_file(path):
+    return send_from_directory(FRONTEND_DIR, path)
 
 
 if __name__ == "__main__":
-    port = int(os.getenv("PORT", "5000"))
-    app.run(host="0.0.0.0", port=port, debug=True)
+    app.run(host="0.0.0.0", port=int(os.getenv("PORT", "5000")), debug=os.getenv("FLASK_DEBUG") == "1")
