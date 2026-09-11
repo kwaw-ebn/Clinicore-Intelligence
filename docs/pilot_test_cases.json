@@ -1,0 +1,11 @@
+{
+  "notice": "Synthetic software-test scenarios only. Expected clinical labels are intentionally omitted because the bundled model is not clinically validated.",
+  "version": "mvp-pilot-1",
+  "cases": [
+    {"id":"P001","age":25,"gender":"Female","fever":"No","cough":"No","fatigue":"No","difficulty_breathing":"No","blood_pressure":"Normal","cholesterol":"Normal","purpose":"Baseline request and response rendering"},
+    {"id":"P002","age":7,"gender":"Male","fever":"Yes","cough":"Yes","fatigue":"Yes","difficulty_breathing":"No","blood_pressure":"Normal","cholesterol":"Normal","purpose":"Paediatric input handling"},
+    {"id":"P003","age":68,"gender":"Female","fever":"No","cough":"No","fatigue":"Yes","difficulty_breathing":"Yes","blood_pressure":"High","cholesterol":"High","purpose":"Multiple risk-feature handling"},
+    {"id":"P004","age":0,"gender":"Male","fever":"No","cough":"No","fatigue":"No","difficulty_breathing":"No","blood_pressure":"Normal","cholesterol":"Normal","purpose":"Lower age boundary"},
+    {"id":"P005","age":120,"gender":"Female","fever":"Yes","cough":"No","fatigue":"No","difficulty_breathing":"No","blood_pressure":"Low","cholesterol":"Low","purpose":"Upper age boundary"}
+  ]
+}
