@@ -1,0 +1,14 @@
+.prototype-banner{background:#fff3cd;color:#5c4600;padding:12px;text-align:center}
+.status-pill{padding:6px 10px;border-radius:999px;background:#7f1d1d;color:#fff;font-size:.85rem}
+.status-pill.ok{background:#166534}
+.consent{display:flex;gap:8px;line-height:1.45}
+.consent input{width:auto!important;margin-top:4px!important}
+.feedback-panel{margin-top:14px;padding:15px;border:1px solid #cbd5e1;border-radius:10px;background:#f8fafc}
+.feedback-panel label{display:block;margin:10px 0}
+.feedback-panel select,.feedback-panel textarea{display:block;width:100%;margin-top:5px;padding:10px;border:1px solid #cbd5e1;border-radius:8px}
+.feedback-panel textarea{min-height:90px;resize:vertical}
+.warning{color:#8a4b08;font-weight:600}
+button:disabled{opacity:.5;cursor:not-allowed}
+#adminPanel{border-left:4px solid var(--accent)}
+#noteOutput{white-space:pre-wrap;background:#f8fafc;padding:14px;border-radius:8px}
+@media(max-width:900px){.user-actions{flex-wrap:wrap}.chat-input-area{flex-direction:column}}

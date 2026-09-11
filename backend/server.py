@@ -5,6 +5,7 @@ used as a diagnosis or as the sole basis for treatment.
 """
 import os
 import traceback
+import uuid
 from pathlib import Path
 
 import joblib
@@ -37,6 +38,8 @@ disease_model = disease_bundle.get("model") if disease_bundle else None
 disease_labels = disease_bundle.get("labels", []) if disease_bundle else []
 disease_features = disease_bundle.get("features", []) if disease_bundle else []
 outcome_model = outcome_bundle.get("model") if outcome_bundle else None
+API_VERSION = "1.1.0"
+MODEL_VERSION = os.getenv("MODEL_VERSION", "mvp-2026-09")
 
 
 def json_body():
@@ -74,7 +77,8 @@ def preprocess_input(payload):
 
 
 def prototype_meta():
-    return {"prototype": True, "clinical_use": False,
+    return {"prototype": True, "clinical_use": False, "api_version": API_VERSION,
+            "model_version": MODEL_VERSION, "request_id": str(uuid.uuid4()),
             "disclaimer": "For supervised MVP testing only. Not a diagnosis or treatment recommendation."}
 
 
@@ -82,6 +86,12 @@ def prototype_meta():
 def health():
     ready = disease_model is not None and outcome_model is not None
     return jsonify({"status": "ok" if ready else "degraded", "models_loaded": ready, **prototype_meta()}), 200 if ready else 503
+
+
+@app.get("/meta")
+def metadata():
+    ready = disease_model is not None and outcome_model is not None
+    return jsonify({"models_loaded": ready, "features": len(disease_features), **prototype_meta()})
 
 
 @app.post("/predict-disease")

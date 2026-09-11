@@ -39,6 +39,15 @@ def test_health_reports_models_ready(client):
     assert response.json["prototype"] is True
 
 
+def test_metadata_exposes_version_and_not_clinical_use(client):
+    response = client.get("/meta")
+    assert response.status_code == 200
+    assert response.json["models_loaded"] is True
+    assert response.json["clinical_use"] is False
+    assert response.json["api_version"] == "1.1.0"
+    assert response.json["request_id"]
+
+
 def test_disease_prediction_contract(client):
     response = client.post("/predict-disease", json=valid_payload())
     assert response.status_code == 200

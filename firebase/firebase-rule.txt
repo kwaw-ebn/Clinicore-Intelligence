@@ -34,5 +34,12 @@ service cloud.firestore {
       allow read: if isAdmin();
       allow write: if false;
     }
+    match /pilot_feedback/{id} {
+      allow create: if createsOwn('createdBy')
+        && request.resource.data.rating in ['useful', 'partly_useful', 'not_useful', 'unsafe_or_misleading'];
+      allow read: if isAdmin() || isOwner('createdBy');
+      allow update: if false;
+      allow delete: if isAdmin() || isOwner('createdBy');
+    }
   }
 }

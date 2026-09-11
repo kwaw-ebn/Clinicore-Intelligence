@@ -5,6 +5,8 @@ const app = firebase.apps.length ? firebase.app() : firebase.initializeApp(FIREB
 const auth = app.auth();
 const db = app.firestore();
 let featureChart;
+let currentPredictionId = null;
+let currentRequestId = null;
 
 const $ = id => document.getElementById(id);
 const escapeHtml = value => String(value).replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
@@ -22,36 +24,70 @@ function payload() {
 
 function showResult(disease, outcome) {
   const rows = disease.top3.map(item => `<li><strong>${escapeHtml(item.condition)}</strong>: ${(item.confidence*100).toFixed(1)}%</li>`).join('');
-  $('predictionResult').innerHTML = `<h3>Model output</h3><ul>${rows}</ul><p><strong>${escapeHtml(outcome.risk)}</strong>: ${(outcome.probability*100).toFixed(1)}%</p><p class="warning">Prototype only. Verify all outputs clinically. Do not use this result as a diagnosis or treatment decision.</p>`;
+  $('predictionResult').innerHTML = `<h3>Model output</h3><ul>${rows}</ul><p><strong>${escapeHtml(outcome.risk)}</strong>: ${(outcome.probability*100).toFixed(1)}%</p><p class="warning">Prototype only. Confidence values are model scores, not diagnostic probabilities. Verify clinically.</p><small>Request: ${escapeHtml(disease.request_id || 'unavailable')}</small>`;
   $('predictionResult').hidden = false;
+  $('feedbackForm').hidden = false;
+  currentRequestId = disease.request_id || null;
+}
+
+function requireConsent() {
+  if (!$('pilotConsent').checked) throw new Error('Accept the pilot agreement before testing.');
 }
 
 $('predictForm').addEventListener('submit', async event => {
   event.preventDefault();
   const button = event.submitter; button.disabled = true;
   try {
+    requireConsent();
     const input = payload();
     if (!Number.isFinite(input.Age) || input.Age < 0 || input.Age > 120) throw new Error('Enter an age between 0 and 120.');
     const [disease, outcome] = await Promise.all([api('/predict-disease', input), api('/predict-outcome', input)]);
     showResult(disease, outcome);
     const user = auth.currentUser;
-    await db.collection('diagnosis').add({patient_name:$('pname').value.trim() || 'Prototype record', features:input, prediction:{diseaseRes:disease,outcomeRes:outcome}, createdBy:user.uid, createdAt:firebase.firestore.FieldValue.serverTimestamp()});
+    const record = await db.collection('diagnosis').add({patient_name:$('pname').value.trim() || 'Synthetic test record', features:input, prediction:{diseaseRes:disease,outcomeRes:outcome}, requestId:currentRequestId, modelVersion:disease.model_version || null, createdBy:user.uid, createdAt:firebase.firestore.FieldValue.serverTimestamp()});
+    currentPredictionId = record.id;
     await refreshRecords();
   } catch (error) { $('predictionResult').textContent = error.message; $('predictionResult').hidden = false; }
-  finally { button.disabled = false; }
+  finally { button.disabled = !$('pilotConsent').checked; }
 });
 
 $('runSymptomCheck').addEventListener('click', async () => {
-  try { const [disease, outcome] = await Promise.all([api('/predict-disease', payload()), api('/predict-outcome', payload())]); showResult(disease, outcome); }
+  try { requireConsent(); const [disease, outcome] = await Promise.all([api('/predict-disease', payload()), api('/predict-outcome', payload())]); currentPredictionId = null; showResult(disease, outcome); }
   catch (error) { $('predictionResult').textContent = error.message; $('predictionResult').hidden = false; }
 });
 
+$('pilotConsent').addEventListener('change', event => {
+  document.querySelectorAll('.pilot-action').forEach(button => { button.disabled = !event.target.checked; });
+});
+
 $('savePatientBtn').addEventListener('click', async () => {
+  requireConsent();
   const name=$('pf_name').value.trim(), age=Number($('pf_age').value);
   if (!name || !Number.isFinite(age) || age<0 || age>120) return alert('Enter a name and valid age.');
   const user=auth.currentUser;
   await db.collection('patients').add({name,age,gender:$('pf_gender').value,phone:$('pf_phone').value.trim(),blood_pressure:$('pf_bp').value,createdBy:user.uid,createdAt:firebase.firestore.FieldValue.serverTimestamp()});
   alert('Prototype patient profile saved. Do not enter identifiable real patient data during public testing.');
+});
+
+$('feedbackForm').addEventListener('submit', async event => {
+  event.preventDefault();
+  try {
+    requireConsent();
+    const user = auth.currentUser;
+    await db.collection('pilot_feedback').add({
+      predictionId: currentPredictionId,
+      requestId: currentRequestId,
+      rating: $('feedbackRating').value,
+      comment: $('feedbackComment').value.trim(),
+      createdBy: user.uid,
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    event.target.reset();
+    event.target.hidden = true;
+    $('feedbackMessage').textContent = 'Feedback saved. Thank you.';
+  } catch (error) {
+    $('feedbackMessage').textContent = error.message;
+  }
 });
 
 async function refreshRecords() {
@@ -67,9 +103,30 @@ async function loadFeatures(){
   catch(error){ console.warn(error); }
 }
 
+async function loadStatus() {
+  try {
+    const data = await api('/meta');
+    $('serviceStatus').textContent = data.models_loaded ? 'Service ready' : 'Models unavailable';
+    $('serviceStatus').classList.toggle('ok', data.models_loaded);
+    $('modelVersion').textContent = data.model_version || 'unknown';
+  } catch (error) {
+    $('serviceStatus').textContent = 'Service unavailable';
+  }
+}
+
+async function loadAdminFeedback() {
+  const snapshot = await db.collection('pilot_feedback').orderBy('createdAt', 'desc').limit(100).get();
+  const rows = snapshot.docs.map(doc => doc.data());
+  $('feedbackTotal').textContent = rows.length;
+  $('unsafeTotal').textContent = rows.filter(row => row.rating === 'unsafe_or_misleading').length;
+  $('feedbackList').innerHTML = rows.slice(0, 20).map(row =>
+    `<div class="record"><strong>${escapeHtml(row.rating)}</strong> · ${escapeHtml(row.comment || 'No comment')}</div>`
+  ).join('') || '<p>No feedback yet.</p>';
+}
+
 function addChat(role,text){const line=document.createElement('div');line.className='chat-line';line.textContent=`${role}: ${text}`;$('chat-box').appendChild(line);}
-$('sendChat').addEventListener('click', async()=>{const message=$('chatInput').value.trim();if(!message)return;addChat('Clinician',message);$('chatInput').value='';try{const data=await api('/chat',{message});addChat('Assistant',data.reply);}catch(error){addChat('System',error.message);}});
-$('generateNote').addEventListener('click',async()=>{try{const data=await api('/generate-note',{chat:$('chat-box').innerText});$('noteOutput').textContent=data.note;$('noteOutput').hidden=false;}catch(error){alert(error.message);}});
+$('sendChat').addEventListener('click', async()=>{try{requireConsent();const message=$('chatInput').value.trim();if(!message)return;addChat('Clinician',message);$('chatInput').value='';const data=await api('/chat',{message});addChat('Assistant',data.reply);}catch(error){addChat('System',error.message);}});
+$('generateNote').addEventListener('click',async()=>{try{requireConsent();const data=await api('/generate-note',{chat:$('chat-box').innerText});$('noteOutput').textContent=data.note;$('noteOutput').hidden=false;}catch(error){alert(error.message);}});
 $('logoutBtn').addEventListener('click',()=>auth.signOut());
 
-auth.onAuthStateChanged(async user=>{if(!user){location.href='login.html';return;}$('userName').textContent=user.displayName||user.email;await Promise.all([refreshRecords(),loadFeatures()]);const roleDoc=await db.collection('users').doc(user.uid).get();$('roleLabel').textContent=roleDoc.exists?roleDoc.data().role:'unassigned';});
+auth.onAuthStateChanged(async user=>{if(!user){location.href='login.html';return;}$('userName').textContent=user.displayName||user.email;await Promise.all([refreshRecords(),loadFeatures(),loadStatus()]);const roleDoc=await db.collection('users').doc(user.uid).get();const role=roleDoc.exists?roleDoc.data().role:'unassigned';$('roleLabel').textContent=role;if(role==='admin'){$('adminPanel').hidden=false;await loadAdminFeedback();}});
