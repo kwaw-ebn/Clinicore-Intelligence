@@ -1,0 +1,63 @@
+name: MVP pilot feedback
+description: Report a bug, usability issue, or safety concern found with synthetic data.
+title: "[Pilot]: "
+labels: ["pilot-feedback"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not include patient information, credentials, API keys, or full chat transcripts. This repository is public.
+  - type: dropdown
+    id: category
+    attributes:
+      label: Category
+      options:
+        - Bug
+        - Usability
+        - Incorrect or unclear model output
+        - Unsafe or misleading output
+        - Privacy or access-control concern
+        - Feature request
+    validations:
+      required: true
+  - type: input
+    id: test-case
+    attributes:
+      label: Synthetic test case ID
+      placeholder: P001
+  - type: input
+    id: browser
+    attributes:
+      label: Browser and device
+      placeholder: Chrome 147 on Windows 10
+  - type: textarea
+    id: observed
+    attributes:
+      label: What happened?
+      description: Describe the behavior without including identifiable health information.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+    validations:
+      required: true
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      options:
+        - Low
+        - Medium
+        - High
+        - Critical
+    validations:
+      required: true
+  - type: checkboxes
+    id: confirmation
+    attributes:
+      label: Confirmation
+      options:
+        - label: I used only synthetic or de-identified data and included no secrets.
+          required: true
