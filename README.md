@@ -1,287 +1,95 @@
-# 📘 MedIntel Assist — AI-Powered Clinical Diagnostic & Support Platform  
-**Created by: _Ebenezer Kwaw_**
-
-MedIntel Assist (Clinic Assist) is a complete end-to-end **clinical decision support system** featuring:
-
-- 🧠 **Machine Learning (XGBoost)**
-- 🩺 **Symptom Checker + Disease Prediction**
-- ⚠ **Severity/Risk Outcome Prediction**
-- 💬 **AI Doctor Assistant Chatbot**
-- 📝 **Medical Note Generator**
-- 📊 **Doctor Analytics Dashboard**
-- 👤 **Patient Profile Management**
-- 🔐 **Firebase Authentication (Doctor/Admin Roles)**
-- 🗄 **Firestore Database Logging**
-- 🌐 **Responsive Modern Dashboard UI**
-- 🔥 **Flask Backend + Joblib ML Models**
+# CliniCore Intelligence
 
-This platform enables clinicians to enter vitals, check symptoms, predict diseases, assess risk, interact with an AI assistant, store patient data, and analyze real medical trends.
+An AI-assisted clinical decision-support **research prototype** by Ebenezer Kwaw.
 
----
+> **MVP testing only:** This software is not a medical device, does not provide a diagnosis, and must not be used as the sole basis for treatment or emergency decisions. Use synthetic or properly de-identified data during testing.
 
-## 🚀 Features Overview
-
-### 🔐 Authentication & User Roles
-- Firebase Email/Password Login  
-- Role-based protected pages:
-  - **Admin** → full analytics + patient data  
-  - **Doctor** → diagnosis tools, symptom checker, chatbot  
-
----
-
-### 🧠 Machine Learning (XGBoost)
-Trained on: **`Disease_symptom_and_patient_profile_dataset.csv`**
-
-Two production models:
-- `disease_model.joblib` → predicts **Top-3 possible conditions**
-- `outcome_model.joblib` → predicts **Low / High risk**
-
-Includes:
-- Feature importance  
-- ROC curve  
-- Confusion matrix  
-- Live Flask prediction endpoints  
-
----
-
-### 📋 Symptom Checker
-User selects symptoms → API returns:
-- Possible conditions  
-- Confidence scores  
-- Cleanly formatted explanations  
-
----
-
-### 👤 Patient Profile Management (Firestore)
-Each diagnosis can save:
-- Name, Age, Gender, Phone  
-- Blood Pressure category  
-- Creator UID  
-- Timestamp  
-
-Admins can access all; doctors access their own.
-
----
-
-### 📊 Doctor Analytics Dashboard (Admin Only)
-Chart visualizations:
-- Records over time  
-- Most common diagnoses  
-- Average patient risk scores  
-
-Powered by **Chart.js** + Firestore role-based rules.
-
----
-
-### 🤖 Advanced AI Chatbot (Doctor Assistant)
-Supports:
-- Medical Q&A  
-- Clarifying symptoms  
-- Voice Input (Speech-to-Text)  
-- Voice Output (Text-to-Speech)  
-- Automatic follow-up suggestions  
-- Safe medical guidance (no diagnosis)  
-- **Medical Note Generation** from chat history  
-
-API Endpoints:
-- `/chat`  
-- `/generate-note`
-
----
-
-### 🩺 Vitals + Diagnosis Engine
-Dashboard collects:
-- Fever  
-- Cough  
-- Breathing difficulty  
-- Age, Gender  
-- Blood Pressure  
-- Cholesterol  
-
-Predicts via Flask endpoints:
-- `/predict-disease`
-- `/predict-outcome`
-
-Outputs:
-- Top 3 predicted diseases  
-- Confidence %  
-- Risk Score (Low/High)
-
----
-
-## 🧱 Project Structure
-
-
-
-clinic-assist/
-│
-├── frontend/
-│ ├── index.html
-│ ├── login.html
-│ ├── register.html
-│ ├── dashboard.html
-│ ├── role-gate.html
-│ ├── style.css
-│ ├── dashboard.css
-│ ├── app.js
-│ ├── dashboard.js
-│ ├── auth.js
-│ ├── firebase-config.js
-│ └── logo.png
-│
-├── backend/
-│ ├── server.py
-│ ├── train_model.py
-│ ├── disease_model.joblib
-│ ├── outcome_model.joblib
-│ ├── requirements.txt
-│ ├── Dockerfile
-│ └── Procfile
-│
-├── firebase/
-│ ├── firestore-rules.txt
-│ ├── auth-rules.txt
-│ └── instructions.md
-│
-├── docker-compose.yml
-├── LICENSE
-└── README.md
+## Current MVP
 
+- Firebase email/password authentication
+- Doctor test accounts with protected Firestore records
+- XGBoost condition-candidate and outcome-risk models
+- Top-three model outputs with confidence values
+- Patient test-profile and prediction logging
+- Feature-importance chart
+- Clinician-facing AI information assistant
+- Draft note generation for clinician verification
+- Flask API, Docker deployment, and health endpoint
 
+## Important limitations
 
----
+The bundled dataset and models are suitable for software demonstration and controlled evaluation only. They have not been externally validated for clinical use. Confidence values are model scores, not the probability that a patient has a condition. Do not enter real patient identifiers into a public test deployment.
 
-## ⚙️ Backend Setup
+## Run locally
 
-```sh
-cd backend
-pip install -r requirements.txt
-python server.py
+1. Copy your Firebase web configuration into `Frontend/firebase-config.js`.
+2. Create a virtual environment and install dependencies:
 
-🧠 Training the XGBoost Models (Colab)
-import pandas as pd
-from xgboost import XGBClassifier
-import joblib
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -r backend/requirements.txt
+```
 
-df = pd.read_csv("Disease_symptom_and_patient_profile_dataset.csv")
+3. Optionally set AI configuration:
 
-# training code here...
+```bash
+export OPENAI_API_KEY="your-key"
+export OPENAI_MODEL="gpt-4o-mini"
+```
 
-joblib.dump(model, "disease_model.joblib")
-joblib.dump(model2, "outcome_model.joblib")
+4. Start the server:
 
-Download:
-
-from google.colab import files
-files.download("disease_model.joblib")
-files.download("outcome_model.joblib")
+```bash
+python backend/server.py
+```
 
-🔥 Firebase Setup
-1. Enable:
+Open `http://localhost:5000`. Check model readiness at `http://localhost:5000/health`.
 
-Authentication
+## Docker
 
-Firestore
+```bash
+docker build -t clinicore-intelligence .
+docker run --rm -p 5000:5000 -e OPENAI_API_KEY="your-key" clinicore-intelligence
+```
 
-2. Add your web config to:
+## Firebase setup
 
-frontend/firebase-config.js
+- Enable Email/Password authentication and Firestore.
+- Deploy `firebase/firebase-rule.txt` as the Firestore ruleset.
+- New public registrations are always assigned the `doctor` role.
+- Create administrator custom claims only from a trusted server-side process.
+- Use a separate Firebase project containing no real clinical data for public MVP testing.
 
-3. Firestore Security Rules
+## API
 
-match /patients/{pid} {
-  allow create: if request.auth != null;
-  allow read: if request.auth != null &&
-    (request.auth.token.role == 'admin' ||
-     resource.data.createdBy == request.auth.uid);
-  allow update, delete: if request.auth.token.role == 'admin';
-}
+| Endpoint | Method | Purpose |
+| --- | --- | --- |
+| `/health` | GET | Service and model readiness |
+| `/predict-disease` | POST | Top-three model condition candidates |
+| `/predict-outcome` | POST | Model-estimated outcome risk |
+| `/feature-importance` | GET | Global model feature importance |
+| `/chat` | POST | Clinician-facing information assistant |
+| `/generate-note` | POST | Draft note requiring verification |
 
-match /chat_history/{cid} {
-  allow create: if request.auth != null;
-  allow read: if request.auth != null &&
-    request.auth.uid == resource.data.uid;
-}
+## Deployment variables
 
-match /diagnosis/{doc} {
-  allow create: if request.auth != null;
-  allow read: if request.auth.token.role == 'admin';
-}
+- `PORT`: provided by most hosting platforms
+- `OPENAI_API_KEY`: optional; required for chat and note generation
+- `OPENAI_MODEL`: optional model override
+- `ALLOWED_ORIGINS`: comma-separated origins for split frontend/backend deployment
+- `FLASK_DEBUG=1`: local development only
 
-4. Assign Admin Role
-node setAdmin.js
+## MVP acceptance checks
 
-**🌐 Frontend Setup
+- `GET /health` reports both models loaded.
+- Registration creates a doctor account; users cannot self-register as admin.
+- Invalid ages and malformed JSON return safe 400 responses.
+- Prediction results show the prototype disclaimer.
+- A doctor can read only their own Firestore records.
+- Chat fails safely when no API key is configured.
+- Generated notes are clearly marked as drafts requiring clinician review.
 
-Open:**
-frontend/index.html
+## License
 
-
-💬 API Endpoints
-Endpoint	Purpose
-/predict-disease	XGBoost disease prediction
-/predict-outcome	Risk score prediction
-/feature-importance	Model global feature importance
-/roc-data	ROC curve JSON
-/confusion-matrix	Confusion matrix JSON
-/chat	AI medical assistant
-/generate-note	Auto medical note writer
-
-
-🐳 Deployment
-Backend (Docker)
-
-docker build -t clinic-backend .
-docker run -p 5000:5000 clinic-backend
-Backend (Render)
-
-Create New Web Service
-
-Use Dockerfile
-
-Add env var:
-OPENAI_API_KEY
-
-Deploy
-
-Frontend (Firebase Hosting)
-
-firebase init hosting
-firebase deploy
-
-
-📡 Data Flow (End-to-End)
-
-User Login (Firebase)
-        ↓
-Dashboard loads (Doctor/Admin role)
-        ↓
-Doctor enters symptoms/vitals
-        ↓
-Frontend → Flask API
-        ↓
-XGBoost models return predictions
-        ↓
-Frontend displays diseases + risk
-        ↓
-Save diagnosis → Firestore
-        ↓
-Admin dashboard computes analytics
-        ↓
-Doctor chats with AI assistant
-        ↓
-Chat history stored → Firestore
-        ↓
-Doctor generates medical note
-
-
-🧑‍💻 Author
-
-Ebenezer Kwaw
-Machine Learning & AI in Healthcare Engineer
-
-📄 License
-
-MIT / Apache / All Rights Reserved
-
-
+See [LICENSE](LICENSE).
