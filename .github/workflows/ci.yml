@@ -1,25 +1,31 @@
-name: CI
+name: MVP checks
 
-on: [push, pull_request]
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
 
 jobs:
-  lint-and-test:
+  test:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-      - name: Set up Python
-        uses: actions/setup-python@v4
+      - uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
-      - name: Install backend deps
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r backend/requirements.txt
-      - name: Run train script (smoke)
-        run: |
-          # This runs but expects dataset to be present in repo; skip if not.
-          if [ -f "Disease_symptom_and_patient_profile_dataset.csv" ]; then
-            python backend/train_model.py
-          else
-            echo "Dataset missing - skipping model train"
-          fi
+          pip install -r backend/requirements.txt pytest==8.3.3
+      - name: Check Python syntax
+        run: python -m compileall -q backend
+      - name: Run API contract tests
+        run: pytest -q
+      - name: Verify model files exist
+        run: test -s backend/disease_model.joblib && test -s backend/outcome_model.joblib

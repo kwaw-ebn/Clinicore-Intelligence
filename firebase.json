@@ -1,0 +1,7 @@
+{
+  "firestore": {"rules": "firebase/firebase-rule.txt"},
+  "hosting": {
+    "public": "Frontend",
+    "ignore": ["firebase.json", "**/.*", "**/node_modules/**"]
+  }
+}
