@@ -59,7 +59,7 @@ $('other_chronic_history').addEventListener('change', event => { $('other_chroni
 
 function showResult(disease, outcome) {
   const rows = disease.top3.map(item => `<li><strong>${escapeHtml(item.condition)}</strong>: ${(item.confidence*100).toFixed(1)}%</li>`).join('');
-  $('predictionResult').innerHTML = `<h3>Legacy model output</h3><ul>${rows}</ul><p><strong>${escapeHtml(outcome.risk)}</strong>: ${(outcome.probability*100).toFixed(1)}%</p><p class="warning">Prototype only. Confidence values are model scores, not diagnostic probabilities. The newly collected vital signs, BMI, glucose and chronic disease history are saved for retraining but do not yet affect this legacy output. Verify clinically.</p><small>Request: ${escapeHtml(disease.request_id || 'unavailable')}</small>`;
+  $('predictionResult').innerHTML = `<h3>Synthetic model output</h3><p><strong>Stage:</strong> ${escapeHtml(disease.model_stage === 'post_lab' ? 'Post-lab support' : 'Pre-lab pattern')}</p><ul>${rows}</ul><p><strong>${escapeHtml(outcome.risk)}</strong>: ${(outcome.probability*100).toFixed(1)}%</p><p class="warning">Prototype only. This model was trained entirely on synthetic scenarios. Scores are not diagnostic probabilities or evidence of clinical accuracy. Verify clinically.</p><small>Request: ${escapeHtml(disease.request_id || 'unavailable')}</small>`;
   $('predictionResult').hidden = false;
   $('feedbackForm').hidden = false;
   currentRequestId = disease.request_id || null;
