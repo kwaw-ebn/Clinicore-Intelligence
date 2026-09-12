@@ -91,11 +91,26 @@ $('feedbackForm').addEventListener('submit', async event => {
 });
 
 async function refreshRecords() {
-  const snap=await db.collection('diagnosis').orderBy('createdAt','desc').limit(30).get();
-  $('totalRecords').textContent=snap.size;
-  const labels=new Set();
-  $('recordsList').innerHTML=snap.docs.map(doc=>{const r=doc.data(), top=r.prediction?.diseaseRes?.top3?.[0]?.condition || 'Unavailable'; labels.add(top); return `<div class="record"><strong>${escapeHtml(r.patient_name||'Prototype record')}</strong> · ${escapeHtml(top)}</div>`}).join('') || '<p>No test records yet.</p>';
-  $('uniqueDx').textContent=labels.size;
+  const user = auth.currentUser;
+  if (!user) return;
+  const snap = await db.collection('diagnosis')
+    .where('createdBy', '==', user.uid)
+    .limit(50)
+    .get();
+  const docs = [...snap.docs].sort((a, b) => {
+    const aTime = a.data().createdAt?.toMillis?.() || 0;
+    const bTime = b.data().createdAt?.toMillis?.() || 0;
+    return bTime - aTime;
+  }).slice(0, 30);
+  $('totalRecords').textContent = docs.length;
+  const labels = new Set();
+  $('recordsList').innerHTML = docs.map(doc => {
+    const record = doc.data();
+    const top = record.prediction?.diseaseRes?.top3?.[0]?.condition || 'Unavailable';
+    labels.add(top);
+    return `<div class="record"><strong>${escapeHtml(record.patient_name || 'Prototype record')}</strong> · ${escapeHtml(top)}</div>`;
+  }).join('') || '<p>No test records yet.</p>';
+  $('uniqueDx').textContent = labels.size;
 }
 
 async function loadFeatures(){
