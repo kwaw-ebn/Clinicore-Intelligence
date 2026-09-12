@@ -29,7 +29,7 @@ def load_bundle(filename):
     try:
         return joblib.load(path) if path.exists() else None
     except Exception as exc:
-        app.logger.error("Could not load %s: %s", filename, exc)
+        app.logger.exception("Could not load %s (%s): %r", filename, type(exc).__name__, exc)
         return None
 
 

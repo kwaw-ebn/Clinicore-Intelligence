@@ -5,5 +5,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends libgomp1 && rm 
 COPY backend/requirements.txt backend/requirements.txt
 RUN pip install --no-cache-dir -r backend/requirements.txt
 COPY . .
+RUN python backend/train_model.py
 EXPOSE 5000
 CMD ["sh", "-c", "gunicorn backend.server:app --bind 0.0.0.0:${PORT:-5000} --workers 1 --threads 4 --timeout 120"]
