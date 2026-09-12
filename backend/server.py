@@ -38,7 +38,7 @@ disease_model = disease_bundle.get("model") if disease_bundle else None
 disease_labels = disease_bundle.get("labels", []) if disease_bundle else []
 disease_features = disease_bundle.get("features", []) if disease_bundle else []
 outcome_model = outcome_bundle.get("model") if outcome_bundle else None
-API_VERSION = "1.2.0"
+API_VERSION = "1.3.0"
 MODEL_VERSION = os.getenv("MODEL_VERSION", "mvp-2026-09")
 
 

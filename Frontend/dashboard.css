@@ -16,6 +16,12 @@ a{color:var(--accent-deep)}
 .card h2,.card h3{color:var(--primary);margin-top:0}.card.small{padding:14px}
 .main-panel{flex:1;display:flex;flex-direction:column;gap:15px}
 .form-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:11px}
+.form-section{grid-column:1/-1;margin:12px 0 0;padding:9px 0 5px;border-bottom:1px solid var(--border);font-size:1rem}
+.form-note{color:var(--muted)}
+.field-label{display:flex;flex-direction:column;gap:6px;font-weight:600}
+.field-label input,.field-label select{width:100%;font-weight:400}
+.calculated-field{display:flex;align-items:center;min-height:44px;padding:10px 11px;border-radius:9px;border:1px solid var(--border);background:#eef8f7;font-weight:700;color:var(--primary)}
+.span-2{grid-column:span 2}
 input,select,textarea{font:inherit}.form-grid input,.form-grid select,.form-grid label,.sidebar input,.sidebar select{padding:11px;border-radius:9px;border:1px solid var(--border);background:#fff}
 .sidebar input,.sidebar select{display:block;width:100%;margin:7px 0}
 input:focus,select:focus,textarea:focus{outline:3px solid rgba(8,168,174,.18);border-color:var(--accent)}
@@ -36,5 +42,5 @@ button:hover:not(:disabled),.btn:hover{transform:translateY(-1px)}
 .auth-card h1{margin:12px 0 4px;color:var(--primary)}.auth-card .muted{color:var(--muted)}
 .auth-logo{display:block;width:min(330px,100%);height:auto;margin:0 auto 8px;border-radius:12px}
 .auth-card form{display:grid;gap:12px;margin:22px 0 16px}.auth-card input{width:100%;padding:13px;border:1px solid var(--border);border-radius:10px}
-@media(max-width:1000px){.form-grid{grid-template-columns:1fr}.grid-2{grid-template-columns:1fr}.dashboard-layout{flex-direction:column}.sidebar{width:100%}}
+@media(max-width:1000px){.form-grid{grid-template-columns:1fr}.span-2{grid-column:auto}.grid-2{grid-template-columns:1fr}.dashboard-layout{flex-direction:column}.sidebar{width:100%}}
 @media(max-width:700px){.topbar{align-items:flex-start;gap:14px;flex-direction:column}.brand{align-items:flex-start}.logo{width:135px;height:60px}.user-actions{flex-wrap:wrap}.chat-input-area{flex-direction:column}}

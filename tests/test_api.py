@@ -44,7 +44,7 @@ def test_metadata_exposes_version_and_not_clinical_use(client):
     assert response.status_code == 200
     assert response.json["models_loaded"] is True
     assert response.json["clinical_use"] is False
-    assert response.json["api_version"] == "1.2.0"
+    assert response.json["api_version"] == "1.3.0"
     assert response.json["request_id"]
 
 

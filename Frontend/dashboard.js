@@ -19,12 +19,44 @@ async function api(path, body) {
 }
 
 function payload() {
-  return {Age:Number($('age').value), Gender:$('gender').value, Fever:$('fever').checked?'Yes':'No', Cough:$('cough').checked?'Yes':'No', Fatigue:$('fatigue').checked?'Yes':'No', DifficultyBreathing:$('dbreath').checked?'Yes':'No', BloodPressure:$('bp_cat').value, Cholesterol:$('chol').value};
+  return {Age:Number($('age').value), Gender:$('gender').value, Fever:$('fever').checked?'Yes':'No', Cough:$('cough').checked?'Yes':'No', Fatigue:$('fatigue').checked?'Yes':'No', DifficultyBreathing:$('dbreath').checked?'Yes':'No', BloodPressure:$('bp_cat').value, Cholesterol:$('chol').value, clinicalContext:clinicalContext()};
 }
+
+const optionalNumber = id => {
+  const raw = $(id).value.trim();
+  return raw === '' ? null : Number(raw);
+};
+
+function calculateBmi() {
+  const weight = optionalNumber('weight_kg');
+  const height = optionalNumber('height_cm');
+  const bmi = weight && height ? weight / ((height / 100) ** 2) : null;
+  $('bmi_output').textContent = Number.isFinite(bmi) ? bmi.toFixed(1) : 'Not calculated';
+  return Number.isFinite(bmi) ? Number(bmi.toFixed(1)) : null;
+}
+
+function clinicalContext() {
+  const glucoseType = $('glucose_type').value;
+  return {
+    vitalSigns: {temperature_c:optionalNumber('temperature'), pulse_bpm:optionalNumber('pulse'), respiratory_rate_bpm:optionalNumber('respiratory_rate'), spo2_percent:optionalNumber('spo2'), systolic_bp_mmhg:optionalNumber('systolic_bp'), diastolic_bp_mmhg:optionalNumber('diastolic_bp')},
+    anthropometry: {weight_kg:optionalNumber('weight_kg'), height_cm:optionalNumber('height_cm'), bmi_kg_m2:calculateBmi()},
+    glucose: {test_type:glucoseType, result_mmol_l:glucoseType === 'not_done' ? null : optionalNumber('glucose_value')},
+    chronicDiseaseHistory: {hypertension:$('hypertension_history').checked, diabetes:$('diabetes_history').checked, other:$('other_chronic_history').checked, other_details:$('other_chronic_history').checked ? $('other_chronic_details').value.trim() : ''}
+  };
+}
+
+function validateClinicalContext(context) {
+  if ((context.anthropometry.weight_kg === null) !== (context.anthropometry.height_cm === null)) throw new Error('Enter both weight and height to calculate BMI, or leave both blank.');
+  if (context.glucose.test_type !== 'not_done' && context.glucose.result_mmol_l === null) throw new Error('Enter the measured glucose result for the selected FBS or RBS test.');
+}
+
+['weight_kg','height_cm'].forEach(id => $(id).addEventListener('input', calculateBmi));
+$('glucose_type').addEventListener('change', event => { $('glucose_value').disabled = event.target.value === 'not_done'; if (event.target.value === 'not_done') $('glucose_value').value = ''; });
+$('other_chronic_history').addEventListener('change', event => { $('other_chronic_details').disabled = !event.target.checked; if (!event.target.checked) $('other_chronic_details').value = ''; });
 
 function showResult(disease, outcome) {
   const rows = disease.top3.map(item => `<li><strong>${escapeHtml(item.condition)}</strong>: ${(item.confidence*100).toFixed(1)}%</li>`).join('');
-  $('predictionResult').innerHTML = `<h3>Model output</h3><ul>${rows}</ul><p><strong>${escapeHtml(outcome.risk)}</strong>: ${(outcome.probability*100).toFixed(1)}%</p><p class="warning">Prototype only. Confidence values are model scores, not diagnostic probabilities. Verify clinically.</p><small>Request: ${escapeHtml(disease.request_id || 'unavailable')}</small>`;
+  $('predictionResult').innerHTML = `<h3>Legacy model output</h3><ul>${rows}</ul><p><strong>${escapeHtml(outcome.risk)}</strong>: ${(outcome.probability*100).toFixed(1)}%</p><p class="warning">Prototype only. Confidence values are model scores, not diagnostic probabilities. The newly collected vital signs, BMI, glucose and chronic disease history are saved for retraining but do not yet affect this legacy output. Verify clinically.</p><small>Request: ${escapeHtml(disease.request_id || 'unavailable')}</small>`;
   $('predictionResult').hidden = false;
   $('feedbackForm').hidden = false;
   currentRequestId = disease.request_id || null;
@@ -40,7 +72,8 @@ $('predictForm').addEventListener('submit', async event => {
   try {
     requireConsent();
     const input = payload();
-    if (!Number.isFinite(input.Age) || input.Age < 0 || input.Age > 120) throw new Error('Enter an age between 0 and 120.');
+    if (!Number.isFinite(input.Age) || input.Age < 18 || input.Age > 120) throw new Error('This adult MVP requires an age between 18 and 120.');
+    validateClinicalContext(input.clinicalContext);
     const [disease, outcome] = await Promise.all([api('/predict-disease', input), api('/predict-outcome', input)]);
     showResult(disease, outcome);
     const user = auth.currentUser;
@@ -52,7 +85,7 @@ $('predictForm').addEventListener('submit', async event => {
 });
 
 $('runSymptomCheck').addEventListener('click', async () => {
-  try { requireConsent(); const [disease, outcome] = await Promise.all([api('/predict-disease', payload()), api('/predict-outcome', payload())]); currentPredictionId = null; showResult(disease, outcome); }
+  try { requireConsent(); const input=payload(); validateClinicalContext(input.clinicalContext); const [disease, outcome] = await Promise.all([api('/predict-disease', input), api('/predict-outcome', input)]); currentPredictionId = null; showResult(disease, outcome); }
   catch (error) { $('predictionResult').textContent = error.message; $('predictionResult').hidden = false; }
 });
 
