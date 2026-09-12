@@ -7,6 +7,7 @@ const db = app.firestore();
 let featureChart;
 let currentPredictionId = null;
 let currentRequestId = null;
+let savedRecords = [];
 
 const $ = id => document.getElementById(id);
 const escapeHtml = value => String(value).replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
@@ -64,6 +65,40 @@ function showResult(disease, outcome) {
   $('feedbackForm').hidden = false;
   currentRequestId = disease.request_id || null;
 }
+
+function clearOutput() {
+  $('predictionResult').hidden = true;
+  $('predictionResult').innerHTML = '';
+  $('feedbackForm').hidden = true;
+  $('feedbackForm').reset();
+  $('feedbackMessage').textContent = '';
+  currentPredictionId = null;
+  currentRequestId = null;
+}
+
+function showSavedRecord(record) {
+  const disease = record.prediction?.diseaseRes;
+  const outcome = record.prediction?.outcomeRes;
+  if (!disease?.top3 || !outcome) throw new Error('This saved record has no readable model output.');
+  showResult(disease, outcome);
+  currentPredictionId = record.id;
+  currentRequestId = record.requestId || disease.request_id || null;
+  $('predictionResult').scrollIntoView({behavior:'smooth', block:'center'});
+}
+
+$('clearOutputBtn').addEventListener('click', clearOutput);
+$('findRecordBtn').addEventListener('click', () => {
+  const query = $('recordSearch').value.trim().toLowerCase();
+  const message = $('recordSearchMessage');
+  if (!query) { message.textContent = 'Enter a recorded label first.'; return; }
+  const exact = savedRecords.find(record => (record.patient_name || '').trim().toLowerCase() === query);
+  const partial = savedRecords.find(record => (record.patient_name || '').toLowerCase().includes(query));
+  const record = exact || partial;
+  if (!record) { message.textContent = 'No saved output found with that label.'; return; }
+  try { showSavedRecord(record); message.textContent = `Showing ${record.patient_name}.`; }
+  catch (error) { message.textContent = error.message; }
+});
+$('recordSearch').addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); $('findRecordBtn').click(); } });
 
 function requireConsent() {
   if (!$('pilotConsent').checked) throw new Error('Accept the pilot agreement before testing.');
@@ -138,14 +173,18 @@ async function refreshRecords() {
     const bTime = b.data().createdAt?.toMillis?.() || 0;
     return bTime - aTime;
   }).slice(0, 30);
+  savedRecords = docs.map(doc => ({id:doc.id, ...doc.data()}));
   $('totalRecords').textContent = docs.length;
   const labels = new Set();
-  $('recordsList').innerHTML = docs.map(doc => {
-    const record = doc.data();
+  $('recordsList').innerHTML = savedRecords.map(record => {
     const top = record.prediction?.diseaseRes?.top3?.[0]?.condition || 'Unavailable';
     labels.add(top);
-    return `<div class="record"><strong>${escapeHtml(record.patient_name || 'Prototype record')}</strong> · ${escapeHtml(top)}</div>`;
+    return `<button type="button" class="record record-button" data-record-id="${escapeHtml(record.id)}"><strong>${escapeHtml(record.patient_name || 'Prototype record')}</strong><span>${escapeHtml(top)}</span></button>`;
   }).join('') || '<p>No test records yet.</p>';
+  $('recordsList').querySelectorAll('[data-record-id]').forEach(button => button.addEventListener('click', () => {
+    const record = savedRecords.find(item => item.id === button.dataset.recordId);
+    if (record) showSavedRecord(record);
+  }));
   $('uniqueDx').textContent = labels.size;
 }
 
