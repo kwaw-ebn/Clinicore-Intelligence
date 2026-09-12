@@ -19,7 +19,9 @@ async function api(path, body) {
 }
 
 function payload() {
-  return {Age:Number($('age').value), Gender:$('gender').value, Fever:$('fever').checked?'Yes':'No', Cough:$('cough').checked?'Yes':'No', Fatigue:$('fatigue').checked?'Yes':'No', DifficultyBreathing:$('dbreath').checked?'Yes':'No', BloodPressure:$('bp_cat').value, Cholesterol:$('chol').value, clinicalContext:clinicalContext()};
+  const symptomIds=['fever','chills','headache','cough','fatigue','dbreath','sore_throat','runny_nose','nausea','vomiting','diarrhea','abdominal_pain','painful_urination','urinary_frequency','flank_pain','rash','itching','confusion'];
+  const symptoms=Object.fromEntries(symptomIds.map(id=>[id,$(id).checked]));
+  return {Age:Number($('age').value), Gender:$('gender').value, Fever:symptoms.fever?'Yes':'No', Cough:symptoms.cough?'Yes':'No', Fatigue:symptoms.fatigue?'Yes':'No', DifficultyBreathing:symptoms.dbreath?'Yes':'No', BloodPressure:$('bp_cat').value, Cholesterol:$('chol').value, symptoms, clinicalContext:clinicalContext()};
 }
 
 const optionalNumber = id => {
@@ -40,6 +42,7 @@ function clinicalContext() {
   return {
     vitalSigns: {temperature_c:optionalNumber('temperature'), pulse_bpm:optionalNumber('pulse'), respiratory_rate_bpm:optionalNumber('respiratory_rate'), spo2_percent:optionalNumber('spo2'), systolic_bp_mmhg:optionalNumber('systolic_bp'), diastolic_bp_mmhg:optionalNumber('diastolic_bp')},
     anthropometry: {weight_kg:optionalNumber('weight_kg'), height_cm:optionalNumber('height_cm'), bmi_kg_m2:calculateBmi()},
+    laboratory: {malaria_rdt:$('malaria_rdt').value, hemoglobin_g_dl:optionalNumber('hemoglobin'), wbc_10e9_l:optionalNumber('wbc'), urine_leukocyte_esterase:$('urine_le').value, urine_nitrite:$('urine_nitrite').value},
     glucose: {test_type:glucoseType, result_mmol_l:glucoseType === 'not_done' ? null : optionalNumber('glucose_value')},
     chronicDiseaseHistory: {hypertension:$('hypertension_history').checked, diabetes:$('diabetes_history').checked, other:$('other_chronic_history').checked, other_details:$('other_chronic_history').checked ? $('other_chronic_details').value.trim() : ''}
   };

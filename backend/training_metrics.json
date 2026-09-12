@@ -1,0 +1,126 @@
+{
+  "warning": "Synthetic software-test metrics; not clinical performance.",
+  "pre_lab": {
+    "accuracy": 0.8333,
+    "report": {
+      "blood_pressure_review_pattern": {
+        "precision": 0.9230769230769231,
+        "recall": 0.9230769230769231,
+        "f1-score": 0.9230769230769231,
+        "support": 13.0
+      },
+      "gastrointestinal_infection_pattern": {
+        "precision": 0.95,
+        "recall": 0.7916666666666666,
+        "f1-score": 0.8636363636363635,
+        "support": 24.0
+      },
+      "malaria_pattern": {
+        "precision": 0.7,
+        "recall": 0.8235294117647058,
+        "f1-score": 0.7567567567567567,
+        "support": 17.0
+      },
+      "other_or_insufficient_information": {
+        "precision": 0.75,
+        "recall": 0.7142857142857143,
+        "f1-score": 0.7317073170731706,
+        "support": 21.0
+      },
+      "respiratory_infection_pattern": {
+        "precision": 0.8387096774193549,
+        "recall": 0.8387096774193549,
+        "f1-score": 0.8387096774193549,
+        "support": 31.0
+      },
+      "urinary_infection_pattern": {
+        "precision": 0.875,
+        "recall": 1.0,
+        "f1-score": 0.9333333333333333,
+        "support": 14.0
+      },
+      "accuracy": 0.8333333333333334,
+      "macro avg": {
+        "precision": 0.8394644334160463,
+        "recall": 0.8485447322022276,
+        "f1-score": 0.8412033952159836,
+        "support": 120.0
+      },
+      "weighted avg": {
+        "precision": 0.8391666666666666,
+        "recall": 0.8333333333333334,
+        "f1-score": 0.8335388159778403,
+        "support": 120.0
+      }
+    }
+  },
+  "post_lab": {
+    "accuracy": 0.8667,
+    "report": {
+      "blood_pressure_review_pattern": {
+        "precision": 0.9230769230769231,
+        "recall": 0.9230769230769231,
+        "f1-score": 0.9230769230769231,
+        "support": 13.0
+      },
+      "gastrointestinal_infection_pattern": {
+        "precision": 0.9545454545454546,
+        "recall": 0.9130434782608695,
+        "f1-score": 0.9333333333333332,
+        "support": 23.0
+      },
+      "malaria_pattern": {
+        "precision": 0.75,
+        "recall": 0.5,
+        "f1-score": 0.6,
+        "support": 6.0
+      },
+      "malaria_test_positive": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1-score": 1.0,
+        "support": 12.0
+      },
+      "other_or_insufficient_information": {
+        "precision": 0.6538461538461539,
+        "recall": 0.8095238095238095,
+        "f1-score": 0.7234042553191489,
+        "support": 21.0
+      },
+      "respiratory_infection_pattern": {
+        "precision": 0.8709677419354839,
+        "recall": 0.8709677419354839,
+        "f1-score": 0.8709677419354839,
+        "support": 31.0
+      },
+      "urinary_infection_pattern": {
+        "precision": 1.0,
+        "recall": 0.3333333333333333,
+        "f1-score": 0.5,
+        "support": 3.0
+      },
+      "urinary_test_supported_pattern": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1-score": 1.0,
+        "support": 11.0
+      },
+      "accuracy": 0.8666666666666667,
+      "macro avg": {
+        "precision": 0.894054534175502,
+        "recall": 0.7937431607663024,
+        "f1-score": 0.8188477817081112,
+        "support": 120.0
+      },
+      "weighted avg": {
+        "precision": 0.8765442890442892,
+        "recall": 0.8666666666666667,
+        "f1-score": 0.8646513002364067,
+        "support": 120.0
+      }
+    }
+  },
+  "risk": {
+    "roc_auc": 0.9008
+  }
+}

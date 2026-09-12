@@ -10,6 +10,7 @@ from pathlib import Path
 
 import joblib
 import numpy as np
+import pandas as pd
 from flask import Flask, Response, jsonify, request, send_from_directory
 from flask_cors import CORS
 from sklearn.metrics import auc, confusion_matrix, roc_curve
@@ -33,13 +34,18 @@ def load_bundle(filename):
 
 
 disease_bundle = load_bundle("disease_model.joblib")
+prelab_bundle = load_bundle("prelab_model.joblib")
 outcome_bundle = load_bundle("outcome_model.joblib")
 disease_model = disease_bundle.get("model") if disease_bundle else None
 disease_labels = disease_bundle.get("labels", []) if disease_bundle else []
 disease_features = disease_bundle.get("features", []) if disease_bundle else []
+prelab_model = prelab_bundle.get("model") if prelab_bundle else None
+prelab_labels = prelab_bundle.get("labels", []) if prelab_bundle else []
+prelab_features = prelab_bundle.get("features", []) if prelab_bundle else []
 outcome_model = outcome_bundle.get("model") if outcome_bundle else None
-API_VERSION = "1.3.0"
-MODEL_VERSION = os.getenv("MODEL_VERSION", "mvp-2026-09")
+outcome_features = outcome_bundle.get("features", []) if outcome_bundle else []
+API_VERSION = "2.0.0"
+MODEL_VERSION = os.getenv("MODEL_VERSION", (disease_bundle or {}).get("model_version", "mvp-2026-09"))
 
 
 def json_body():
@@ -52,7 +58,7 @@ def yes(value):
     return str(value).strip().lower() in {"yes", "y", "true", "1"}
 
 
-def preprocess_input(payload):
+def preprocess_input(payload, features=None):
     try:
         age = float(payload.get("Age", payload.get("age")))
     except (TypeError, ValueError):
@@ -65,15 +71,61 @@ def preprocess_input(payload):
     if bp not in {"Low", "Normal", "High"} or chol not in {"Low", "Normal", "High"}:
         raise ValueError("Blood pressure and cholesterol must be Low, Normal, or High")
 
-    values = [
-        yes(payload.get("Fever", "No")), yes(payload.get("Cough", "No")),
-        yes(payload.get("Fatigue", "No")),
-        yes(payload.get("DifficultyBreathing", payload.get("Difficulty Breathing", "No"))),
-        age, str(payload.get("Gender", "Female")).lower() in {"male", "m", "1"},
-        {"Low": 0, "Normal": 1, "High": 2}[bp],
-        {"Low": 0, "Normal": 1, "High": 2}[chol],
-    ]
-    return np.asarray(values, dtype=float).reshape(1, -1)
+    if not features:
+        values = [yes(payload.get("Fever", "No")), yes(payload.get("Cough", "No")),
+                  yes(payload.get("Fatigue", "No")),
+                  yes(payload.get("DifficultyBreathing", "No")), age,
+                  str(payload.get("Gender", "Female")).lower() in {"male", "m", "1"},
+                  {"Low": 0, "Normal": 1, "High": 2}[bp],
+                  {"Low": 0, "Normal": 1, "High": 2}[chol]]
+        return np.asarray(values, dtype=float).reshape(1, -1)
+
+    symptoms = payload.get("symptoms", {}) or {}
+    context = payload.get("clinicalContext", {}) or {}
+    vitals = context.get("vitalSigns", {}) or {}
+    anthropometry = context.get("anthropometry", {}) or {}
+    glucose = context.get("glucose", {}) or {}
+    laboratory = context.get("laboratory", {}) or {}
+    chronic = context.get("chronicDiseaseHistory", {}) or {}
+    symptom_map = {"fever_reported":"fever", "difficulty_breathing":"dbreath"}
+    row = {
+        "age_years": age, "sex_at_birth": str(payload.get("Gender", "female")).lower(),
+        "pregnancy_status": "unknown", "symptom_duration_days": None,
+        "diabetes_history": int(bool(chronic.get("diabetes"))),
+        "hypertension_history": int(bool(chronic.get("hypertension"))),
+        "asthma_history": 0, "temperature_c": vitals.get("temperature_c"),
+        "heart_rate_bpm": vitals.get("pulse_bpm"),
+        "respiratory_rate_bpm": vitals.get("respiratory_rate_bpm"),
+        "spo2_percent": vitals.get("spo2_percent"),
+        "systolic_bp_mmhg": vitals.get("systolic_bp_mmhg"),
+        "diastolic_bp_mmhg": vitals.get("diastolic_bp_mmhg"),
+        "weight_kg": anthropometry.get("weight_kg"), "height_cm": anthropometry.get("height_cm"),
+        "bmi_kg_m2": anthropometry.get("bmi_kg_m2"),
+        "malaria_rdt": laboratory.get("malaria_rdt", "not_done"),
+        "hemoglobin_g_dl": laboratory.get("hemoglobin_g_dl"),
+        "wbc_10e9_l": laboratory.get("wbc_10e9_l"),
+        "glucose_test_type": glucose.get("test_type", "not_done"),
+        "glucose_mmol_l": glucose.get("result_mmol_l"),
+        "urine_leukocyte_esterase": laboratory.get("urine_leukocyte_esterase", "not_done"),
+        "urine_nitrite": laboratory.get("urine_nitrite", "not_done"),
+    }
+    for field in ["fever_reported", "chills", "headache", "cough", "difficulty_breathing",
+                  "fatigue", "sore_throat", "runny_nose", "nausea", "vomiting", "diarrhea",
+                  "abdominal_pain", "painful_urination", "urinary_frequency", "flank_pain",
+                  "rash", "itching", "confusion"]:
+        key = symptom_map.get(field, field)
+        row[field] = int(bool(symptoms.get(key, yes(payload.get(field, "No")))))
+    return pd.DataFrame([{name: row.get(name) for name in features}], columns=features)
+
+
+def labs_available(payload):
+    context = payload.get("clinicalContext", {}) or {}
+    laboratory = context.get("laboratory", {}) or {}
+    glucose = context.get("glucose", {}) or {}
+    return (laboratory.get("malaria_rdt", "not_done") != "not_done" or
+            glucose.get("test_type", "not_done") != "not_done" or
+            any(laboratory.get(name) not in (None, "", "not_done") for name in
+                ("hemoglobin_g_dl", "wbc_10e9_l", "urine_leukocyte_esterase", "urine_nitrite")))
 
 
 def prototype_meta():
@@ -99,9 +151,14 @@ def predict_disease():
     try:
         if disease_model is None:
             return jsonify(error="Disease model is unavailable", **prototype_meta()), 503
-        probabilities = disease_model.predict_proba(preprocess_input(json_body()))[0]
-        ranked = sorted(zip(disease_labels, probabilities), key=lambda item: item[1], reverse=True)[:3]
-        return jsonify(top3=[{"condition": str(name), "confidence": round(float(score), 4)} for name, score in ranked], **prototype_meta())
+        payload = json_body()
+        use_postlab = labs_available(payload) or prelab_model is None
+        model = disease_model if use_postlab else prelab_model
+        labels = disease_labels if use_postlab else prelab_labels
+        features = disease_features if use_postlab else prelab_features
+        probabilities = model.predict_proba(preprocess_input(payload, features))[0]
+        ranked = sorted(zip(labels, probabilities), key=lambda item: item[1], reverse=True)[:3]
+        return jsonify(top3=[{"condition": str(name), "confidence": round(float(score), 4)} for name, score in ranked], model_stage="post_lab" if use_postlab else "pre_lab", synthetic_only=True, **prototype_meta())
     except ValueError as exc:
         return jsonify(error=str(exc), **prototype_meta()), 400
     except Exception:
@@ -114,7 +171,7 @@ def predict_outcome():
     try:
         if outcome_model is None:
             return jsonify(error="Outcome model is unavailable", **prototype_meta()), 503
-        probability = float(outcome_model.predict_proba(preprocess_input(json_body()))[0][1])
+        probability = float(outcome_model.predict_proba(preprocess_input(json_body(), outcome_features))[0][1])
         return jsonify(risk="Higher model-estimated risk" if probability >= 0.5 else "Lower model-estimated risk",
                        probability=round(probability, 4), **prototype_meta())
     except ValueError as exc:
@@ -126,8 +183,10 @@ def predict_outcome():
 
 @app.get("/feature-importance")
 def feature_importance():
-    values = getattr(disease_model, "feature_importances_", []) if disease_model else []
-    return jsonify([{"feature": str(f), "importance": round(float(v), 4)} for f, v in zip(disease_features, values)])
+    estimator = disease_model.named_steps.get("model") if hasattr(disease_model, "named_steps") else disease_model
+    values = getattr(estimator, "feature_importances_", []) if estimator else []
+    names = disease_model.named_steps["preprocess"].get_feature_names_out() if hasattr(disease_model, "named_steps") else disease_features
+    return jsonify([{"feature": str(f).split("__", 1)[-1], "importance": round(float(v), 4)} for f, v in zip(names, values)])
 
 
 @app.post("/roc-data")

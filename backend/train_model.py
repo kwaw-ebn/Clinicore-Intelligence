@@ -1,246 +1,106 @@
-# ============================================================
-# TRAIN XGBOOST MODELS FOR CLINIC-ASSIST
-# Builds:
-#   • disease_model.joblib  (multi-class disease prediction)
-#   • outcome_model.joblib  (binary risk prediction)
-#   • feature_importance.json
-#   • roc_data.json
-#   • confusion_matrix.json
-#
-# Dataset required:
-#   Disease_symptom_and_patient_profile_dataset.csv
-#
-# Written for Clinic-Assist / MedIntel Assist
-# ============================================================
-
-import pandas as pd
-import numpy as np
+"""Train synthetic-only CliniCore MVP models for software testing."""
 import json
+from pathlib import Path
+
 import joblib
-from sklearn.preprocessing import LabelEncoder
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import (
-    roc_curve,
-    roc_auc_score,
-    confusion_matrix,
-    classification_report
-)
+import pandas as pd
+from sklearn.compose import ColumnTransformer
+from sklearn.impute import SimpleImputer
+from sklearn.metrics import accuracy_score, classification_report, roc_auc_score
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import OneHotEncoder
 from xgboost import XGBClassifier
 
+ROOT = Path(__file__).resolve().parents[1]
+DATASET = ROOT / "data" / "synthetic" / "Clinicore_Synthetic_Clinical_Dataset_v2.xlsx"
+OUTPUT = Path(__file__).resolve().parent
 
-# ============================================================
-# LOAD DATA
-# ============================================================
-
-df = pd.read_csv("Disease_symptom_and_patient_profile_dataset.csv")
-
-print("Dataset loaded:", df.shape)
-
-
-# ============================================================
-# BASIC CLEANING
-# ============================================================
-
-df = df.dropna()
-df = df.reset_index(drop=True)
-
-# Expected columns
-expected_cols = [
-    "age", "gender", "blood_pressure", "cholesterol",
-    "fever", "cough", "difficulty_breathing",
-    "disease", "risk"
+PRE_LAB_FEATURES = [
+    "age_years", "sex_at_birth", "pregnancy_status", "symptom_duration_days",
+    "fever_reported", "chills", "headache", "cough", "difficulty_breathing",
+    "fatigue", "sore_throat", "runny_nose", "nausea", "vomiting", "diarrhea",
+    "abdominal_pain", "painful_urination", "urinary_frequency", "flank_pain",
+    "rash", "itching", "confusion", "diabetes_history", "hypertension_history",
+    "asthma_history", "temperature_c", "heart_rate_bpm", "respiratory_rate_bpm",
+    "spo2_percent", "systolic_bp_mmhg", "diastolic_bp_mmhg", "weight_kg",
+    "height_cm", "bmi_kg_m2",
 ]
-
-missing = [c for c in expected_cols if c not in df.columns]
-if missing:
-    raise Exception(f"Dataset is missing required columns: {missing}")
-
-print("All required columns found.")
-
-
-# ============================================================
-# ENCODE CATEGORICAL FEATURES
-# ============================================================
-
-label_encoders = {}
-
-categorical_columns = ["gender", "blood_pressure", "cholesterol"]
-
-for col in categorical_columns:
-    le = LabelEncoder()
-    df[col] = le.fit_transform(df[col])
-    label_encoders[col] = le
+LAB_FEATURES = ["malaria_rdt", "hemoglobin_g_dl", "wbc_10e9_l",
+                "glucose_test_type", "glucose_mmol_l",
+                "urine_leukocyte_esterase", "urine_nitrite"]
+CATEGORICAL = {"sex_at_birth", "pregnancy_status", "malaria_rdt",
+               "glucose_test_type", "urine_leukocyte_esterase", "urine_nitrite"}
 
 
-# ============================================================
-# FEATURES & TARGETS
-# ============================================================
-
-X = df[[
-    "age", "gender", "blood_pressure", "cholesterol",
-    "fever", "cough", "difficulty_breathing"
-]]
-
-y_disease = df["disease"]
-y_risk = df["risk"]  # binary
-
-
-# Encode disease labels
-disease_encoder = LabelEncoder()
-y_disease_encoded = disease_encoder.fit_transform(y_disease)
-
-
-# ============================================================
-# SPLIT TRAIN/TEST
-# ============================================================
-
-X_train, X_test, y_train_d, y_test_d = train_test_split(
-    X, y_disease_encoded, test_size=0.2, random_state=42, stratify=y_disease_encoded
-)
-
-X_train_r, X_test_r, y_train_r, y_test_r = train_test_split(
-    X, y_risk, test_size=0.2, random_state=42, stratify=y_risk
-)
+def make_pipeline(features, class_count, binary=False):
+    categorical = [x for x in features if x in CATEGORICAL]
+    numeric = [x for x in features if x not in CATEGORICAL]
+    transform = ColumnTransformer([
+        ("number", SimpleImputer(strategy="median"), numeric),
+        ("category", Pipeline([
+            ("impute", SimpleImputer(strategy="most_frequent")),
+            ("encode", OneHotEncoder(handle_unknown="ignore", sparse_output=False)),
+        ]), categorical),
+    ])
+    settings = dict(n_estimators=140, max_depth=4, learning_rate=0.06,
+                    subsample=0.9, colsample_bytree=0.9, random_state=4545,
+                    n_jobs=2, eval_metric="logloss" if binary else "mlogloss")
+    if not binary:
+        settings.update(objective="multi:softprob", num_class=class_count)
+    return Pipeline([("preprocess", transform), ("model", XGBClassifier(**settings))])
 
 
-# ============================================================
-# TRAIN DISEASE MODEL (MULTI-CLASS XGBOOST)
-# ============================================================
-
-print("\nTraining disease model...")
-
-disease_model = XGBClassifier(
-    n_estimators=300,
-    max_depth=6,
-    learning_rate=0.05,
-    subsample=0.9,
-    colsample_bytree=0.9,
-    objective="multi:softprob",
-    eval_metric="mlogloss",
-    num_class=len(disease_encoder.classes_)
-)
-
-disease_model.fit(X_train, y_train_d)
-
-print("Disease model trained!")
+def train_multiclass(df, features, target, filename):
+    train, test = df[df.split == "train"], df[df.split == "test"]
+    labels = sorted(train[target].unique())
+    ids = {label: index for index, label in enumerate(labels)}
+    model = make_pipeline(features, len(labels))
+    model.fit(train[features], train[target].map(ids))
+    predicted = model.predict(test[features])
+    joblib.dump({"model": model, "labels": labels, "features": features,
+                 "model_kind": target, "model_version": "synthetic-v2-2026-09",
+                 "synthetic_only": True, "clinical_use": False}, OUTPUT / filename)
+    return {"accuracy": round(float(accuracy_score(test[target].map(ids), predicted)), 4),
+            "report": classification_report(test[target].map(ids), predicted,
+                labels=list(range(len(labels))), target_names=labels,
+                zero_division=0, output_dict=True)}
 
 
-# ============================================================
-# TRAIN OUTCOME MODEL (BINARY XGBOOST)
-# ============================================================
-
-print("\nTraining outcome model...")
-
-outcome_model = XGBClassifier(
-    n_estimators=200,
-    max_depth=5,
-    learning_rate=0.05,
-    subsample=0.9,
-    colsample_bytree=0.9,
-    objective="binary:logistic",
-    eval_metric="logloss"
-)
-
-outcome_model.fit(X_train_r, y_train_r)
-
-print("Outcome model trained!")
+def train_risk(df):
+    features = PRE_LAB_FEATURES + LAB_FEATURES
+    train, test = df[df.split == "train"], df[df.split == "test"]
+    model = make_pipeline(features, 2, binary=True)
+    model.fit(train[features], train.urgent_clinician_review)
+    probabilities = model.predict_proba(test[features])[:, 1]
+    joblib.dump({"model": model, "features": features,
+                 "model_kind": "urgent_clinician_review",
+                 "model_version": "synthetic-v2-2026-09", "synthetic_only": True,
+                 "clinical_use": False}, OUTPUT / "outcome_model.joblib")
+    return {"roc_auc": round(float(roc_auc_score(test.urgent_clinician_review,
+                                                  probabilities)), 4)}
 
 
-# ============================================================
-# SAVE MODELS
-# ============================================================
-
-bundle_disease = {
-    "model": disease_model,
-    "encoder": disease_encoder,
-    "feature_labels": list(X.columns),
-    "categorical_label_encoders": label_encoders
-}
-
-bundle_outcome = {
-    "model": outcome_model,
-    "feature_labels": list(X.columns),
-    "categorical_label_encoders": label_encoders
-}
-
-joblib.dump(bundle_disease, "disease_model.joblib")
-joblib.dump(bundle_outcome, "outcome_model.joblib")
-
-print("\nModels saved:")
-print(" - disease_model.joblib")
-print(" - outcome_model.joblib")
+def main():
+    df = pd.read_excel(DATASET, sheet_name="Synthetic encounters")
+    required = set(PRE_LAB_FEATURES + LAB_FEATURES + ["split", "pre_lab_target",
+                   "post_lab_support_category", "urgent_clinician_review"])
+    missing = sorted(required - set(df.columns))
+    if missing:
+        raise ValueError(f"Dataset is missing columns: {missing}")
+    metrics = {
+        "warning": "Synthetic software-test metrics; not clinical performance.",
+        "pre_lab": train_multiclass(df, PRE_LAB_FEATURES, "pre_lab_target",
+                                    "prelab_model.joblib"),
+        "post_lab": train_multiclass(df, PRE_LAB_FEATURES + LAB_FEATURES,
+                                     "post_lab_support_category",
+                                     "disease_model.joblib"),
+        "risk": train_risk(df),
+    }
+    (OUTPUT / "training_metrics.json").write_text(json.dumps(metrics, indent=2))
+    print(json.dumps({"pre_lab_accuracy": metrics["pre_lab"]["accuracy"],
+                      "post_lab_accuracy": metrics["post_lab"]["accuracy"],
+                      "risk_roc_auc": metrics["risk"]["roc_auc"]}, indent=2))
 
 
-# ============================================================
-# FEATURE IMPORTANCE EXPORT
-# ============================================================
-
-importance = disease_model.feature_importances_
-feature_importance = {
-    "features": list(X.columns),
-    "importance": importance.tolist()
-}
-
-with open("feature_importance.json", "w") as f:
-    json.dump(feature_importance, f, indent=4)
-
-print("Feature importance exported.")
-
-
-# ============================================================
-# ROC CURVE DATA (OUTCOME MODEL)
-# ============================================================
-
-print("\nGenerating ROC curve...")
-
-y_proba = outcome_model.predict_proba(X_test_r)[:, 1]
-fpr, tpr, thresholds = roc_curve(y_test_r, y_proba)
-auc_score = roc_auc_score(y_test_r, y_proba)
-
-roc_output = {
-    "fpr": fpr.tolist(),
-    "tpr": tpr.tolist(),
-    "thresholds": thresholds.tolist(),
-    "auc": float(auc_score)
-}
-
-with open("roc_data.json", "w") as f:
-    json.dump(roc_output, f, indent=4)
-
-print("ROC exported: auc =", auc_score)
-
-
-# ============================================================
-# CONFUSION MATRIX (OUTCOME MODEL)
-# ============================================================
-
-print("\nGenerating confusion matrix...")
-
-y_pred = outcome_model.predict(X_test_r)
-cm = confusion_matrix(y_test_r, y_pred)
-
-cm_output = {
-    "matrix": cm.tolist(),
-    "labels": ["Low Risk", "High Risk"]
-}
-
-with open("confusion_matrix.json", "w") as f:
-    json.dump(cm_output, f, indent=4)
-
-print("Confusion matrix exported.")
-
-
-# ============================================================
-# DONE
-# ============================================================
-
-print("\n=============================================")
-print("TRAINING COMPLETE — ALL FILES GENERATED")
-print("=============================================")
-print(" Files created:")
-print("  - disease_model.joblib")
-print("  - outcome_model.joblib")
-print("  - feature_importance.json")
-print("  - roc_data.json")
-print("  - confusion_matrix.json")
-print("=============================================")
+if __name__ == "__main__":
+    main()

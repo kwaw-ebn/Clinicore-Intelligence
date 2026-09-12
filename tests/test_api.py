@@ -21,9 +21,12 @@ class FakeOutcomeModel:
 @pytest.fixture()
 def client(monkeypatch):
     monkeypatch.setattr(server, "disease_model", FakeDiseaseModel())
+    monkeypatch.setattr(server, "prelab_model", FakeDiseaseModel())
     monkeypatch.setattr(server, "outcome_model", FakeOutcomeModel())
     monkeypatch.setattr(server, "disease_labels", ["Condition A", "Condition B", "Condition C"])
+    monkeypatch.setattr(server, "prelab_labels", ["Condition A", "Condition B", "Condition C"])
     monkeypatch.setattr(server, "disease_features", ["Fever", "Cough", "Fatigue", "Breathing", "Age", "Gender", "BP", "Cholesterol"])
+    monkeypatch.setattr(server, "prelab_features", ["Fever", "Cough", "Fatigue", "Breathing", "Age", "Gender", "BP", "Cholesterol"])
     server.app.config.update(TESTING=True)
     return server.app.test_client()
 
@@ -44,7 +47,7 @@ def test_metadata_exposes_version_and_not_clinical_use(client):
     assert response.status_code == 200
     assert response.json["models_loaded"] is True
     assert response.json["clinical_use"] is False
-    assert response.json["api_version"] == "1.3.0"
+    assert response.json["api_version"] == "2.0.0"
     assert response.json["request_id"]
 
 
