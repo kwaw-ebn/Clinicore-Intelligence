@@ -62,14 +62,18 @@ function showResult(disease, outcome) {
   const rows = disease.top3.map(item => `<li><strong>${escapeHtml(item.condition)}</strong>: ${(item.confidence*100).toFixed(1)}%</li>`).join('');
   $('predictionResult').innerHTML = `<h3>Synthetic model output</h3><p><strong>Stage:</strong> ${escapeHtml(disease.model_stage === 'post_lab' ? 'Post-lab support' : 'Pre-lab pattern')}</p><ul>${rows}</ul><p><strong>${escapeHtml(outcome.risk)}</strong>: ${(outcome.probability*100).toFixed(1)}%</p><p class="warning">Prototype only. This model was trained entirely on synthetic scenarios. Scores are not diagnostic probabilities or evidence of clinical accuracy. Verify clinically.</p><small>Request: ${escapeHtml(disease.request_id || 'unavailable')}</small>`;
   $('predictionResult').hidden = false;
+  $('predictionResult').style.display = 'block';
   $('feedbackForm').hidden = false;
+  $('feedbackForm').style.display = 'block';
   currentRequestId = disease.request_id || null;
 }
 
 function clearOutput() {
   $('predictionResult').hidden = true;
+  $('predictionResult').style.display = 'none';
   $('predictionResult').innerHTML = '';
   $('feedbackForm').hidden = true;
+  $('feedbackForm').style.display = 'none';
   $('feedbackForm').reset();
   $('feedbackMessage').textContent = '';
   currentPredictionId = null;
