@@ -33,9 +33,25 @@ def load_bundle(filename):
         return None
 
 
-disease_bundle = load_bundle("disease_model.joblib")
-prelab_bundle = load_bundle("prelab_model.joblib")
-outcome_bundle = load_bundle("outcome_model.joblib")
+def load_model_bundles():
+    return (load_bundle("disease_model.joblib"),
+            load_bundle("prelab_model.joblib"),
+            load_bundle("outcome_model.joblib"))
+
+
+disease_bundle, prelab_bundle, outcome_bundle = load_model_bundles()
+
+# Render's native Python service may use a different Python/XGBoost runtime than
+# the one that produced the committed joblib files. Rebuild synthetic test
+# bundles once in the active runtime when deserialization fails.
+if not all((disease_bundle, prelab_bundle, outcome_bundle)):
+    try:
+        app.logger.warning("Rebuilding synthetic model bundles for this runtime")
+        from backend.train_model import main as train_models
+        train_models()
+        disease_bundle, prelab_bundle, outcome_bundle = load_model_bundles()
+    except Exception:
+        app.logger.exception("Runtime model rebuild failed")
 disease_model = disease_bundle.get("model") if disease_bundle else None
 disease_labels = disease_bundle.get("labels", []) if disease_bundle else []
 disease_features = disease_bundle.get("features", []) if disease_bundle else []
