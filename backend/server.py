@@ -38,7 +38,7 @@ disease_model = disease_bundle.get("model") if disease_bundle else None
 disease_labels = disease_bundle.get("labels", []) if disease_bundle else []
 disease_features = disease_bundle.get("features", []) if disease_bundle else []
 outcome_model = outcome_bundle.get("model") if outcome_bundle else None
-API_VERSION = "1.1.0"
+API_VERSION = "1.2.0"
 MODEL_VERSION = os.getenv("MODEL_VERSION", "mvp-2026-09")
 
 
@@ -161,6 +161,61 @@ def openai_client():
     return OpenAI(api_key=key)
 
 
+def demo_chat_reply(message):
+    """Return deterministic, non-diagnostic guidance for free MVP testing."""
+    text = message.lower()
+    urgent_terms = (
+        "severe difficulty breathing", "unresponsive", "unconscious",
+        "seizure", "heavy bleeding", "chest pain"
+    )
+    if any(term in text for term in urgent_terms):
+        return (
+            "FREE DEMO MODE — This description may require urgent assessment. "
+            "Follow the facility's emergency protocol and contact the appropriate "
+            "local emergency service. Do not rely on this demo response for triage."
+        )
+
+    if any(term in text for term in ("fever", "cough", "breathing", "fatigue")):
+        checklist = (
+            "review onset and duration; record temperature, respiratory rate and "
+            "oxygen saturation when available; check hydration and relevant history; "
+            "screen for red flags; and apply the approved local clinical guideline."
+        )
+    elif any(term in text for term in ("blood pressure", "hypertension", "bp")):
+        checklist = (
+            "repeat the measurement using correct technique; review symptoms, "
+            "medicines, pregnancy status when relevant and cardiovascular risk; "
+            "then apply the approved local clinical guideline."
+        )
+    else:
+        checklist = (
+            "clarify the presenting concern, onset, duration, severity, relevant "
+            "history, medicines, allergies, vital signs and red flags."
+        )
+
+    return (
+        "FREE DEMO MODE — Suggested information-gathering checklist: "
+        + checklist
+        + " This is a fixed prototype response, not AI-generated advice, a diagnosis "
+          "or a treatment recommendation. A qualified clinician must verify all decisions."
+    )
+
+
+def demo_note(transcript):
+    """Create a transparent draft without inferring facts absent from the transcript."""
+    return (
+        "FREE DEMO DRAFT — CLINICIAN REVIEW REQUIRED\n\n"
+        "Reported conversation\n"
+        + transcript
+        + "\n\nRelevant history\nNot structured in free demo mode.\n\n"
+          "Objective information\nNot provided unless explicitly stated above.\n\n"
+          "Assessment considerations\nNot generated in free demo mode.\n\n"
+          "Follow-up\nClinician to verify the transcript, complete missing fields and "
+          "apply the appropriate local protocol. This draft is not part of the medical "
+          "record until reviewed and approved."
+    )
+
+
 @app.post("/chat")
 @app.post("/api/chat")
 def chat():
@@ -170,10 +225,17 @@ def chat():
             raise ValueError("Message must contain 1 to 4,000 characters")
         client = openai_client()
         if client is None:
-            return jsonify(error="AI assistant is not configured"), 503
-        response = client.chat.completions.create(model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"), temperature=0.2, max_tokens=400,
-            messages=[{"role":"system","content":"You are a clinician-facing prototype assistant. Do not diagnose, prescribe, or invent facts. State uncertainty, recommend clinical verification, and direct urgent or emergency concerns to local emergency services."},{"role":"user","content":message}])
-        return jsonify(reply=response.choices[0].message.content.strip(), **prototype_meta())
+            return jsonify(reply=demo_chat_reply(message), mode="demo", **prototype_meta())
+        response = client.chat.completions.create(
+            model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+            temperature=0.2,
+            max_tokens=400,
+            messages=[
+                {"role": "system", "content": "You are a clinician-facing prototype assistant. Do not diagnose, prescribe, or invent facts. State uncertainty, recommend clinical verification, and direct urgent or emergency concerns to local emergency services."},
+                {"role": "user", "content": message},
+            ],
+        )
+        return jsonify(reply=response.choices[0].message.content.strip(), mode="openai", **prototype_meta())
     except ValueError as exc:
         return jsonify(error=str(exc)), 400
     except Exception:
@@ -189,10 +251,17 @@ def generate_note():
             raise ValueError("Chat transcript must contain 1 to 12,000 characters")
         client = openai_client()
         if client is None:
-            return jsonify(error="AI note generator is not configured"), 503
-        response = client.chat.completions.create(model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"), temperature=0.1, max_tokens=600,
-            messages=[{"role":"system","content":"Convert the transcript into a draft note with: Reported symptoms, Relevant history, Objective information, Assessment considerations, and Follow-up. Never add missing facts. Mark unknown information as not provided. Add: Draft for clinician review; not part of the medical record until verified."},{"role":"user","content":transcript}])
-        return jsonify(note=response.choices[0].message.content.strip(), **prototype_meta())
+            return jsonify(note=demo_note(transcript), mode="demo", **prototype_meta())
+        response = client.chat.completions.create(
+            model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+            temperature=0.1,
+            max_tokens=600,
+            messages=[
+                {"role": "system", "content": "Convert the transcript into a draft note with: Reported symptoms, Relevant history, Objective information, Assessment considerations, and Follow-up. Never add missing facts. Mark unknown information as not provided. Add: Draft for clinician review; not part of the medical record until verified."},
+                {"role": "user", "content": transcript},
+            ],
+        )
+        return jsonify(note=response.choices[0].message.content.strip(), mode="openai", **prototype_meta())
     except ValueError as exc:
         return jsonify(error=str(exc)), 400
     except Exception:

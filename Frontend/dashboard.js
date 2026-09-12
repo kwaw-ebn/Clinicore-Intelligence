@@ -125,7 +125,7 @@ async function loadAdminFeedback() {
 }
 
 function addChat(role,text){const line=document.createElement('div');line.className='chat-line';line.textContent=`${role}: ${text}`;$('chat-box').appendChild(line);}
-$('sendChat').addEventListener('click', async()=>{try{requireConsent();const message=$('chatInput').value.trim();if(!message)return;addChat('Clinician',message);$('chatInput').value='';const data=await api('/chat',{message});addChat('Assistant',data.reply);}catch(error){addChat('System',error.message);}});
+$('sendChat').addEventListener('click', async()=>{try{requireConsent();const message=$('chatInput').value.trim();if(!message)return;addChat('Clinician',message);$('chatInput').value='';const data=await api('/chat',{message});addChat(data.mode==='demo'?'Demo assistant':'AI assistant',data.reply);}catch(error){addChat('System',error.message);}});
 $('generateNote').addEventListener('click',async()=>{try{requireConsent();const data=await api('/generate-note',{chat:$('chat-box').innerText});$('noteOutput').textContent=data.note;$('noteOutput').hidden=false;}catch(error){alert(error.message);}});
 $('logoutBtn').addEventListener('click',()=>auth.signOut());
 

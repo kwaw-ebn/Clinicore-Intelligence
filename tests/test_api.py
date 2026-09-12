@@ -44,7 +44,7 @@ def test_metadata_exposes_version_and_not_clinical_use(client):
     assert response.status_code == 200
     assert response.json["models_loaded"] is True
     assert response.json["clinical_use"] is False
-    assert response.json["api_version"] == "1.1.0"
+    assert response.json["api_version"] == "1.2.0"
     assert response.json["request_id"]
 
 
@@ -76,8 +76,26 @@ def test_non_json_request_is_rejected(client):
     assert response.status_code == 400
 
 
-def test_chat_fails_safely_without_key(client, monkeypatch):
+def test_chat_uses_safe_demo_without_key(client, monkeypatch):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     response = client.post("/chat", json={"message": "What should be reviewed?"})
-    assert response.status_code == 503
-    assert response.json["error"] == "AI assistant is not configured"
+    assert response.status_code == 200
+    assert response.json["mode"] == "demo"
+    assert "FREE DEMO MODE" in response.json["reply"]
+    assert response.json["clinical_use"] is False
+
+
+def test_demo_chat_flags_urgent_language(client, monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    response = client.post("/chat", json={"message": "Patient reports chest pain"})
+    assert response.status_code == 200
+    assert "urgent assessment" in response.json["reply"]
+
+
+def test_note_uses_demo_without_key_and_does_not_infer(client, monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    response = client.post("/generate-note", json={"chat": "Clinician: fever for two days"})
+    assert response.status_code == 200
+    assert response.json["mode"] == "demo"
+    assert "fever for two days" in response.json["note"]
+    assert "Not structured in free demo mode" in response.json["note"]
